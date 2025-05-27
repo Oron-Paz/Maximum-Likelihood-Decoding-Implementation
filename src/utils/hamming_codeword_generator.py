@@ -41,7 +41,6 @@ def create_extended_hamming_codeword(message_bits, r):
     k = len(message_bits)
     n = 2**r
     
-    # Initialize codeword with zeros
     codeword = [0] * n
     
     # Place message bits in positions that are NOT powers of 2 (except last position)
@@ -69,15 +68,6 @@ def create_extended_hamming_codeword(message_bits, r):
     
     return codeword
 
-# Convenience functions for common codes
-def get_hamming_8_4_4():
-    """Get the [8,4,4] Extended Hamming code (16 codewords)."""
-    return generate_extended_hamming_codewords(r=3)
-
-def get_hamming_16_11_4():
-    """Get the [16,11,4] Extended Hamming code (2048 codewords)."""
-    return generate_extended_hamming_codewords(r=4)
-
 def show_code_info(codewords):
     """Display information about the code."""
     n = codewords.shape[1]
@@ -97,22 +87,3 @@ def show_code_info(codewords):
     
     if len(codewords) > 10:
         print("...")
-
-if __name__ == "__main__":
-    # Example usage
-    
-    print("=== Extended Hamming Code Generator ===\n")
-    
-    # Generate small code
-    print("1. Small code [8,4,4]:")
-    codewords_small = get_hamming_8_4_4()
-    show_code_info(codewords_small)
-    
-    print("\n" + "="*50 + "\n")
-    
-    # Generate your 2048 codeword code
-    print("2. Large code [16,11,4]:")
-    codewords_large = get_hamming_16_11_4()
-    show_code_info(codewords_large)
-    
-    print(f"\nYou now have {len(codewords_large)} codewords ready for ML decoding!")
