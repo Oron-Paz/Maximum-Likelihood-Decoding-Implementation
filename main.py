@@ -1,22 +1,12 @@
 from src.naive_solver.naive import findMinimumDistance
+from src.utils.save_codewords import load_codewords
 import pickle
 import time
 
-def load_codewords(filename):
-    """Load codewords from pickle file"""
-    print(f"Loading codewords from {filename}...")
-    start_time = time.time()
-    
-    with open(filename, 'rb') as f:
-        codewords = pickle.load(f)
-    
-    load_time = time.time() - start_time
-    print(f"Loaded {len(codewords)} codewords in {load_time:.2f} seconds")
-    return codewords
+
 
 def main():
     filename = "codes/hamming_32_26_4_partial_10000k.pkl"      # Large: ~10M codewords
-    
     try:
         # Load codewords from file (much faster than generating!)
         codewords = load_codewords(filename)
@@ -30,15 +20,6 @@ def main():
             # [32,26,4] code - 32 bit message
             corrupted_message = [0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0,
                                1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0]
-            # [32,26,4] code - 32 bit message
-            corrupted_message = [0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0,
-                               1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0]
-        elif "16_11" in filename:
-            # [16,11,4] code - 16 bit message
-            corrupted_message = [0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0]
-        else:
-            # [8,4,4] code - 8 bit message
-            corrupted_message = [0, 1, 0, 0, 1, 0, 1, 1]
         
         print(f"Corrupted message: {corrupted_message}")
         print(f"Message length: {len(corrupted_message)}")

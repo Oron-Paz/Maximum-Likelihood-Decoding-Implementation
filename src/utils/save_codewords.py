@@ -108,9 +108,8 @@ if __name__ == "__main__":
     print("1. Small [8,4,4] - 16 codewords")
     print("2. Medium [16,11,4] - 2,048 codewords") 
     print("3. Large [32,26,4] - 10 million codewords (partial)")
-    print("4. Load existing codewords")
     
-    choice = input("\nEnter choice (1-4): ")
+    choice = input("\nEnter choice (1-3): ")
     
     if choice == "1":
         save_codewords(3)  # r=3 -> [8,4,4]
@@ -119,13 +118,5 @@ if __name__ == "__main__":
     elif choice == "3":
         # Generate 10 million codewords from [32,26,4] code
         save_partial_codewords(5, 10_000_000)  # r=5, 10M codewords
-        print("NOW we're talking! This should definitely be noticeable!")
-    elif choice == "4":
-        filename = input("Enter filename: ")
-        try:
-            codewords = load_codewords(filename)
-            print(f"Successfully loaded {len(codewords)} codewords!")
-        except FileNotFoundError:
-            print(f"File {filename} not found!")
     else:
         print("Invalid choice!")
