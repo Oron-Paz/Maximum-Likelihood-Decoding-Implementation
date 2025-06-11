@@ -1,6 +1,6 @@
 from src.naive_solver.naive import findMinimumDistance
 from utils.save_codewords import load_codewords
-from src.lp_solver.linear_programming import paper_lp_decode, fast_lp_decode_simple
+from src.lp_solver.linear_programming import lp_decode
 from utils.corrupt import corrupt_message
 import pickle
 import time
@@ -11,12 +11,13 @@ def main():
     try:
         codewords = load_codewords(filename)
         codewords_list = [codeword.tolist() for codeword in codewords]
+        codewords_set = set(tuple(cw) for cw in codewords_list)
 
         message = codewords_list[523428]
         print(f"Message to be sent: {message}")
 
         corrupted_message = corrupt_message(message, 1)
-        while corrupted_message in codewords_list:
+        while tuple(corrupted_message) in codewords_set:
             corrupted_message = corrupt_message(message,1)
 
         print(f"Corrupted Message:  {corrupted_message}")
@@ -27,10 +28,6 @@ def main():
         print("\nML Decoding with Pre-loaded Codewords")
         print("=" * 45)
         
-        # Your corrupted message here (adjust length based on code)
-        # if "32_26" in filename:
-        #     # [32,26,4] code - 32 bit message
-        #     #corrupted_message = [0, 1, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0]
         
         #print(f"Corrupted message: {corrupted_message}")
         print(f"Message length: {len(corrupted_message)}")
@@ -51,7 +48,7 @@ def main():
         print("\n2. PAPER'S LINEAR PROGRAMMING ML DECODING:")
         print("-" * 30)
         start_time = time.time()
-        best_codeword_lp, optimal_cost = paper_lp_decode(corrupted_message, channel_error_prob=0.1, r=5)
+        best_codeword_lp, optimal_cost = lp_decode(corrupted_message, channel_error_prob=0.1, r=5)
         decode_time_lp = time.time() - start_time
         
         print(f"Decoding completed in {decode_time_lp:.2f} seconds")
