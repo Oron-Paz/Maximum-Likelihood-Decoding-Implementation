@@ -37,27 +37,6 @@ def load_codewords(filename):
     print(f"Loaded {len(codewords)} codewords of length {len(codewords[0])}")
     return codewords
 
-def save_codewords_txt(r, filename=None):
-    """Alternative: save as text file (human readable but slower)"""
-    if filename is None:
-        n = 2**r
-        k = 2**r - r - 1
-        filename = f"codes/hamming_{n}_{k}_4.txt"
-    
-    codewords = generate_extended_hamming_codewords(r)
-    
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    
-    with open(filename, 'w') as f:
-        f.write(f"Extended Hamming [{2**r},{2**r-r-1},4] Code\n")
-        f.write("="*50 + "\n")
-        for i, codeword in enumerate(codewords):
-            codeword_str = ''.join(map(str, codeword))
-            f.write(f"{i:6d} {codeword_str}\n")
-    
-    print(f"Saved {len(codewords)} codewords to {filename}")
-    return filename
-
 def save_partial_codewords(r, max_codewords, filename=None):
     """Generate and save only the first max_codewords from the code"""
     if filename is None:

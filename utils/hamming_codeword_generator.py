@@ -67,23 +67,3 @@ def create_extended_hamming_codeword(message_bits, r):
     codeword[n - 1] = overall_parity
     
     return codeword
-
-def show_code_info(codewords):
-    """Display information about the code."""
-    n = codewords.shape[1]
-    num_codewords = len(codewords)
-    k = int(np.log2(num_codewords))
-    
-    print(f"\nCode Information:")
-    print(f"Parameters: [{n},{k},4]")
-    print(f"Number of codewords: {num_codewords}")
-    print(f"Codeword length: {n}")
-    
-    # Show first few codewords
-    print(f"\nFirst 10 codewords:")
-    for i in range(min(10, len(codewords))):
-        codeword_str = ''.join(map(str, codewords[i]))
-        print(f"{i:3d}: {codeword_str}")
-    
-    if len(codewords) > 10:
-        print("...")

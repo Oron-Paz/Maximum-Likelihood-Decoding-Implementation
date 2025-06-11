@@ -1,5 +1,5 @@
 
-def findMinimumDistance(corruptedMessage: list[int], codewords: list[list[int]]):
+def findMinimumDistance(corruptedMessage: list[int], codewords: list[list[int]], withStopLoss = False):
     min = float('inf')
     best_codeword = None
     for codeword in codewords:
@@ -7,7 +7,9 @@ def findMinimumDistance(corruptedMessage: list[int], codewords: list[list[int]])
         if potentialHammingDistance < min:
             best_codeword = codeword
             min = potentialHammingDistance
-    
+            if withStopLoss and potentialHammingDistance == 0:
+                return best_codeword, min
+            
     return best_codeword, min
 
 
