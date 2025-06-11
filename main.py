@@ -2,73 +2,52 @@ from src.naive_solver.naive import findMinimumDistance
 from utils.save_codewords import load_codewords
 from src.lp_solver.linear_programming import lp_decode
 from utils.corrupt import corrupt_message
-import pickle
 import time
 
-
 def main():
-    filename = "./codes/hamming_32_26_4_partial_10000k.pkl"      # Large: ~10M codewords
+    print("Testing Paper's LP Approach vs Naive Method")
+    print("\n" + "="*60)
+    test_large_code()
+
+def test_large_code():
+    print("TEST 2: Extended Hamming [32,26,4] Code (Partial)")
+    print("-" * 45)
+    
+    filename = "./codes/hamming_32_26_4_partial_10000k.pkl"
+    
     try:
         codewords = load_codewords(filename)
         codewords_list = [codeword.tolist() for codeword in codewords]
         codewords_set = set(tuple(cw) for cw in codewords_list)
 
-        message = codewords_list[523428]
-        print(f"Message to be sent: {message}")
+        original = codewords_list[523428]
+        corrupted = corrupt_message(original, 1)
+        
+        while tuple(corrupted) in codewords_set:
+            corrupted = corrupt_message(original, 1)
 
-        corrupted_message = corrupt_message(message, 1)
-        while tuple(corrupted_message) in codewords_set:
-            corrupted_message = corrupt_message(message,1)
+        print(f"Original:  {original}")
+        print(f"Corrupted: {corrupted}")
+        print(f"Codebook size: {len(codewords_list):,} codewords")
+        
+        print("\nStarting Naive decoder:")
+        print("-" * 45)
+        start = time.perf_counter()
+        naive_decoded_word , hamming_distance = findMinimumDistance(corrupted, codewords_list)
+        end = time.perf_counter()
+        naive_execution_time = end - start
 
-        print(f"Corrupted Message:  {corrupted_message}")
-        if corrupted_message in codewords_list:
-            print(f"CORRUPTED MESSAGE IS VALID CODEWORD, DECODING WILL FAIL") # shold never reach this line
-        
-        
-        print("\nML Decoding with Pre-loaded Codewords")
-        print("=" * 45)
-        
-        
-        #print(f"Corrupted message: {corrupted_message}")
-        print(f"Message length: {len(corrupted_message)}")
-        print(f"Searching through {len(codewords_list):,} codewords...")
-        
-        # Perform Naive ML decoding and time it
-        print("\n1. NAIVE ML DECODING:")
-        print("-" * 30)
-        start_time = time.time()
-        best_codeword_naive, min_distance = findMinimumDistance(corrupted_message, codewords_list, withStopLoss=False)
-        decode_time_naive = time.time() - start_time
-        
-        print(f"Decoding completed in {decode_time_naive:.2f} seconds")
-        print(f"Decoded codeword:  {best_codeword_naive}")
-        print(f"Hamming distance:  {min_distance}")
-        
-        # Perform Paper's LP ML decoding and time it
-        print("\n2. PAPER'S LINEAR PROGRAMMING ML DECODING:")
-        print("-" * 30)
-        start_time = time.time()
-        best_codeword_lp, optimal_cost = lp_decode(corrupted_message, channel_error_prob=0.1, r=5)
-        decode_time_lp = time.time() - start_time
-        
-        print(f"Decoding completed in {decode_time_lp:.2f} seconds")
-        print(f"Decoded codeword:  {best_codeword_lp}")
-        print(f"Optimal cost:      {optimal_cost:.6f}")
-        
-        # Comparison
-        print("\n3. COMPARISON:")
-        print("-" * 30)
-        print(f"Results match:     {best_codeword_naive == best_codeword_lp}")
-        print(f"Naive time:        {decode_time_naive:.2f} seconds")
-        print(f"LP time:           {decode_time_lp:.2f} seconds")
-        if decode_time_lp > 0:
-            print(f"Speedup:           {decode_time_naive / decode_time_lp:.1f}x")
-        
+        print(f"Decoded word: {naive_decoded_word}")
+        print(f"Hamming Distance {hamming_distance}")
+        print(f"Execution time: {naive_execution_time}s")
+       
         
     except FileNotFoundError:
         print(f"Error: File {filename} not found!")
-        print("Run the codeword generator first to create the codeword files.")
-        print("Example: python src/save_codewords.py")
+        print("Run the codeword generator first:")
+        print("python utils/save_codewords.py")
+    except Exception as e:
+        print(f"Error in large code test: {e}")
 
 if __name__ == "__main__":
     main()
