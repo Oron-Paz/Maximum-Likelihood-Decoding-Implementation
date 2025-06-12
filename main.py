@@ -21,9 +21,10 @@ def test_large_code():
         codewords_set = set(tuple(cw) for cw in codewords_list)
         print("Done loading codewords now creating corrupted message...\n")
 
-        original = codewords_list[523428]
+        original = codewords_list[523428] #random choice doesnt really matter
         corrupted = corrupt_message(original, 1)
         
+        #to ensure that the corrupted word isnt a valid codeword otherwise we'll find it using our methods
         while tuple(corrupted) in codewords_set:
             corrupted = corrupt_message(original, 1)
 
@@ -45,7 +46,7 @@ def test_large_code():
         print(f"Execution time: {naive_execution_time:.3f}s")
         print(f"Correct decoding: {naive_decoded_word == original}")
         
-        # Test 2: LP decoder (exact)
+        # Test 2: LP decoder (exact) Bad takes way too long probably wont even finish running
         print("\n" + "="*60)
         print("LP DECODER (exact):")
         print("-" * 45)
@@ -67,11 +68,6 @@ def test_large_code():
         print(f"Both methods agree: {naive_decoded_word == lp_decoded_word}")
         print(f"Naive time:  {naive_execution_time:.3f}s")
         print(f"LP time:     {lp_execution_time:.3f}s")
-        if lp_execution_time > 0:
-            speedup = naive_execution_time / lp_execution_time
-            print(f"Speedup:     {speedup:.2f}x {'(LP faster)' if speedup > 1 else '(Naive faster)'}")
-        
-
         
     except FileNotFoundError:
         print(f"Error: File {filename} not found!")
@@ -80,9 +76,5 @@ def test_large_code():
     except Exception as e:
         print(f"Error in large code test: {e}")
 
-if __name__ == "__main__":
-    # First test small code where both methods work
-    print("\n" + "="*80 + "\n")
-    
-    # Then test large code to show why relaxations are needed
+if __name__ == "__main__":  
     main()

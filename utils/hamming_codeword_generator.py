@@ -1,3 +1,6 @@
+#this is just for creating the codes i wouldnt worry too muh about 
+# the stuff in this it just generates codewords we can test on
+
 import numpy as np
 
 def generate_extended_hamming_codewords(r):

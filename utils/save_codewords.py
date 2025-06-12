@@ -1,3 +1,6 @@
+#this is just for saving the codes i wouldnt worry too muh about 
+# the stuff in this it just generates codewords we can test on
+
 import numpy as np
 import pickle
 import os
