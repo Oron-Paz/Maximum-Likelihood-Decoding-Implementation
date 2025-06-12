@@ -10,21 +10,22 @@ def main():
     test_large_code()
 
 def test_large_code():
-    print("TEST: Extended Hamming [32,26,4] Code (Partial)")
+    print("TEST: Extended Hamming [32,26,4] Code (Partial, only 10M codewords instead of full 67M)")
     print("-" * 45)
     
     filename = "./codes/hamming_32_26_4_partial_10000k.pkl"
     
     try:
+        #loading codewords
         codewords = load_codewords(filename)
         codewords_list = [codeword.tolist() for codeword in codewords]
         codewords_set = set(tuple(cw) for cw in codewords_list)
         print("Done loading codewords now creating corrupted message...\n")
 
-        original = codewords_list[523428] #random choice doesnt really matter
+        original = codewords_list[523428] #random choice for message doesnt really matter
         corrupted = corrupt_message(original, 1)
         
-        #to ensure that the corrupted word isnt a valid codeword otherwise we'll find it using our methods
+        #to ensure that the corrupted word isnt a valid codeword otherwise we'll find it as a valid answer
         while tuple(corrupted) in codewords_set:
             corrupted = corrupt_message(original, 1)
 

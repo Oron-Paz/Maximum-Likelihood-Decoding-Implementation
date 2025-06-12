@@ -1,3 +1,7 @@
+# super naive approach works every time 
+# (still limited by errors tho since enough 
+# corruption and itll "converge" to a different 
+# valid word)
 
 def findMinimumDistance(corruptedMessage: list[int], codewords: list[list[int]], withStopLoss = False):
     min = float('inf')
