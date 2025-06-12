@@ -10,7 +10,6 @@ def lp_decode(received_message, codewords_list, channel_error_prob=0.1, relaxati
     gamma = compute_gamma(received, channel_error_prob)
     print(f"Gamma (objective): {gamma}")
     
-    # STEP 2: Choose relaxation strategy right now this is all i got cus claude sucks at doing the relaxations
     # add more if statements for different methods suggested in the paper
     if relaxation == 'exact':
         return lp_decode_exact(received, codewords_list, gamma)
@@ -18,12 +17,6 @@ def lp_decode(received_message, codewords_list, channel_error_prob=0.1, relaxati
         raise ValueError(f"Unknown relaxation: {relaxation}")
 
 def lp_decode_exact(received, codewords_list, gamma):
-    """
-    EXACT: Use ConvexHull to get true polytope constraints
-    Only feasible for small codes due to constraint explosion
-    """
-    print("Using EXACT polytope (ConvexHull)")
-    
     codewords = np.array(codewords_list)
     
     hull = ConvexHull(codewords) #convexHull from scipy returns equations that define the polytopes shapes used bellow
@@ -58,16 +51,6 @@ def lp_decode_exact(received, codewords_list, gamma):
 
 
 def compute_gamma(received, crossover_prob):
-    """
-    Compute gamma vector for Binary Symmetric Channel
-    γᵢ = log(Pr[yᵢ|xᵢ=0] / Pr[yᵢ|xᵢ=1])
-    
-    For BSC(p): 
-    - If received[i] = 0: γᵢ = log((1-p)/p) - prefer xᵢ=0
-    - If received[i] = 1: γᵢ = log(p/(1-p)) - prefer xᵢ=1
-    
-    The sign should make the LP prefer matching the received bit.
-    """
     received_array = np.array(received)
     p = crossover_prob
     

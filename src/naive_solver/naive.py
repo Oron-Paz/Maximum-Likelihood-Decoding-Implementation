@@ -1,4 +1,4 @@
-# super naive approach works every time 
+# super naive approach, works every time 
 # (still limited by errors tho since enough 
 # corruption and itll "converge" to a different 
 # valid word)
