@@ -18,7 +18,7 @@ def lp_decode(received_message, codewords_list, channel_error_prob=0.1, relaxati
         raise ValueError(f"Unknown relaxation: {relaxation}")
 
 
-#you need this function for the relaxation methods i believe
+#you need this function for the relaxation methods i believe but not neccasary for exact LP appraoch
 def compute_gamma_bsc(received, crossover_prob):
     """
     Compute gamma vector for Binary Symmetric Channel
