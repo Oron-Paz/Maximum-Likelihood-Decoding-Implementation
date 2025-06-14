@@ -1,5 +1,4 @@
-# This is just for saving the codes - I wouldn't worry too much about 
-# the stuff in this, it just generates codewords we can test on
+# Updated save_codewords.py to use Hamming codes instead of LDPC
 
 import numpy as np
 import pickle
@@ -7,27 +6,23 @@ import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import your code generators
+# Import your Hamming code generator
 try:
-    from ldpc_codeword_generator import generate_ldpc_code, generate_regular_ldpc, print_ldpc_info
+    from hamming_codeword_generator import generate_hamming_code, generate_repetition_code, generate_parity_check_code, generate_dual_hamming_code
 except ImportError:
-    print("Warning: Could not import LDPC generator")
+    print("Warning: Could not import Hamming generators")
 
-def save_ldpc_code(n, k, max_check_degree=3, max_var_degree=2, filename=None, regular=False):
-    """Generate and save LDPC code to file"""
+def save_hamming_code_subset(r, max_codewords, filename=None):
+    """Generate and save subset of Hamming code to file"""
+    n = 2**r - 1
+    k = n - r
+    
     if filename is None:
-        if regular:
-            filename = f"codes/ldpc_regular_{n}_{k}_{max_check_degree}_{max_var_degree}.pkl"
-        else:
-            filename = f"codes/ldpc_{n}_{k}_{max_check_degree}_{max_var_degree}.pkl"
+        filename = f"codes/hamming_{n}_{k}_{r}_subset_{max_codewords}.pkl"
     
-    print(f"Generating LDPC code with n={n}, k={k}...")
+    print(f"Generating Hamming [{n},{k},3] code subset with r={r}, max_codewords={max_codewords}...")
     
-    if regular:
-        # For regular LDPC: max_check_degree=j (var degree), max_var_degree=k (check degree)
-        codewords, local_constraints, H, code_info = generate_regular_ldpc(n, max_check_degree, max_var_degree)
-    else:
-        codewords, local_constraints, H, code_info = generate_ldpc_code(n, k, max_check_degree, max_var_degree)
+    codewords, local_constraints, H, code_info = generate_hamming_code(r, max_codewords=max_codewords)
     
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -36,9 +31,9 @@ def save_ldpc_code(n, k, max_check_degree=3, max_var_degree=2, filename=None, re
     code_data = {
         'codewords': codewords,
         'local_constraints': local_constraints,
-        'parity_check_matrix': H.tolist(),  # Convert to list for JSON compatibility
+        'parity_check_matrix': H.tolist() if H is not None else None,
         'code_info': code_info,
-        'code_type': 'ldpc'
+        'code_type': 'hamming'
     }
     
     # Save as pickle file for faster loading
@@ -49,7 +44,41 @@ def save_ldpc_code(n, k, max_check_degree=3, max_var_degree=2, filename=None, re
     print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
     
     # Print code information
-    print_ldpc_info(H, code_info)
+    print_code_info(code_info)
+    
+    return filename
+    """Generate and save Hamming code to file"""
+    n = 2**r - 1
+    k = n - r
+    
+    if filename is None:
+        filename = f"codes/hamming_{n}_{k}_{r}.pkl"
+    
+    print(f"Generating Hamming [{n},{k},3] code with r={r}...")
+    
+    codewords, local_constraints, H, code_info = generate_hamming_code(r)
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    # Package everything together
+    code_data = {
+        'codewords': codewords,
+        'local_constraints': local_constraints,
+        'parity_check_matrix': H.tolist() if H is not None else None,
+        'code_info': code_info,
+        'code_type': 'hamming'
+    }
+    
+    # Save as pickle file for faster loading
+    with open(filename, 'wb') as f:
+        pickle.dump(code_data, f)
+    
+    print(f"Saved {len(codewords)} codewords to {filename}")
+    print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
+    
+    # Print code information
+    print_code_info(code_info)
     
     return filename
 
@@ -60,40 +89,18 @@ def save_repetition_code(n, filename=None):
     
     print(f"Generating repetition code of length {n}...")
     
-    # Simple repetition code
-    codewords = [
-        [0] * n,  # All zeros
-        [1] * n   # All ones
-    ]
+    codewords, local_constraints, H, code_info = generate_repetition_code(n)
     
-    # Local constraints: adjacent bits must be equal
-    local_constraints = []
-    for i in range(n-1):
-        local_constraints.append({
-            'variables': [i, i+1],
-            'valid_patterns': [[0, 0], [1, 1]],
-            'constraint_type': 'equality'
-        })
-    
-    code_info = {
-        'n': n,
-        'k': 1,
-        'm': n-1,
-        'code_type': 'repetition',
-        'num_codewords': len(codewords),
-        'num_constraints': len(local_constraints)
-    }
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     
     code_data = {
         'codewords': codewords,
         'local_constraints': local_constraints,
-        'parity_check_matrix': None,
+        'parity_check_matrix': H.tolist() if H is not None else None,
         'code_info': code_info,
         'code_type': 'repetition'
     }
-    
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
     
     # Save as pickle file for faster loading
     with open(filename, 'wb') as f:
@@ -102,7 +109,89 @@ def save_repetition_code(n, filename=None):
     print(f"Saved {len(codewords)} codewords to {filename}")
     print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
     
+    print_code_info(code_info)
+    
     return filename
+
+def save_parity_check_code(n, filename=None):
+    """Generate and save parity check code to file"""
+    if filename is None:
+        filename = f"codes/parity_check_{n}_{n-1}.pkl"
+    
+    print(f"Generating parity check [{n},{n-1},2] code...")
+    
+    codewords, local_constraints, H, code_info = generate_parity_check_code(n)
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    code_data = {
+        'codewords': codewords,
+        'local_constraints': local_constraints,
+        'parity_check_matrix': H.tolist() if H is not None else None,
+        'code_info': code_info,
+        'code_type': 'parity_check'
+    }
+    
+    # Save as pickle file for faster loading
+    with open(filename, 'wb') as f:
+        pickle.dump(code_data, f)
+    
+    print(f"Saved {len(codewords)} codewords to {filename}")
+    print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
+    
+    print_code_info(code_info)
+    
+    return filename
+
+def save_simplex_code(r, filename=None):
+    """Generate and save simplex code to file"""
+    n = 2**r - 1
+    k = r
+    
+    if filename is None:
+        filename = f"codes/simplex_{n}_{k}_{r}.pkl"
+    
+    print(f"Generating simplex [{n},{k},{2**(r-1)}] code with r={r}...")
+    
+    codewords, local_constraints, H, code_info = generate_dual_hamming_code(r)
+    
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    
+    code_data = {
+        'codewords': codewords,
+        'local_constraints': local_constraints,
+        'parity_check_matrix': H.tolist() if H is not None else None,
+        'code_info': code_info,
+        'code_type': 'simplex'
+    }
+    
+    # Save as pickle file for faster loading
+    with open(filename, 'wb') as f:
+        pickle.dump(code_data, f)
+    
+    print(f"Saved {len(codewords)} codewords to {filename}")
+    print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
+    
+    print_code_info(code_info)
+    
+    return filename
+
+def print_code_info(code_info):
+    """Print detailed information about the code."""
+    print("\n" + "="*50)
+    print("CODE INFORMATION")
+    print("="*50)
+    
+    print(f"Code type: {code_info.get('code_type', 'unknown')}")
+    print(f"Block length (n): {code_info['n']}")
+    print(f"Information bits (k): {code_info['k']}")
+    print(f"Parity checks (m): {code_info['m']}")
+    print(f"Rate: {code_info['k']/code_info['n']:.3f}")
+    print(f"Minimum distance: {code_info.get('minimum_distance', 'unknown')}")
+    print(f"Number of codewords: {code_info['num_codewords']}")
+    print(f"Number of local constraints: {code_info['num_constraints']}")
 
 def load_code(filename):
     """Load code data from file"""
@@ -111,7 +200,6 @@ def load_code(filename):
     with open(filename, 'rb') as f:
         code_data = pickle.load(f)
     
-    # code_type is at the top level, not inside code_info
     code_type = code_data.get('code_type', 'unknown')
     print(f"Loaded {code_type} code:")
     print(f"  n={code_data['code_info']['n']}, k={code_data['code_info']['k']}")
@@ -119,52 +207,6 @@ def load_code(filename):
     print(f"  {code_data['code_info']['num_constraints']} local constraints")
     
     return code_data
-
-def generate_simple_hamming(r):
-    """Simple Hamming code generator as fallback"""
-    import itertools
-    
-    n = 2**r - 1
-    k = n - r
-    
-    # Create parity check matrix
-    H = np.zeros((r, n), dtype=int)
-    for i in range(1, n+1):
-        binary_repr = format(i, f'0{r}b')
-        for j in range(r):
-            H[j, i-1] = int(binary_repr[j])
-    
-    # Generate all codewords
-    codewords = []
-    for info_bits in itertools.product([0, 1], repeat=k):
-        x = np.zeros(n, dtype=int)
-        x[:k] = info_bits
-        
-        # Calculate parity bits
-        for i in range(r):
-            parity = 0
-            for j in range(k):
-                parity ^= (H[i, j] * x[j])
-            x[k + i] = parity
-        
-        codewords.append(x.tolist())
-    
-    # Create local constraints
-    local_constraints = []
-    for i in range(r):
-        variables = [j for j in range(n) if H[i, j] == 1]
-        valid_patterns = []
-        for pattern in itertools.product([0, 1], repeat=len(variables)):
-            if sum(pattern) % 2 == 0:
-                valid_patterns.append(list(pattern))
-        
-        local_constraints.append({
-            'variables': variables,
-            'valid_patterns': valid_patterns,
-            'constraint_type': 'parity_check'
-        })
-    
-    return codewords, local_constraints, H
 
 def list_saved_codes(directory="codes"):
     """List all saved codes in directory"""
@@ -180,47 +222,69 @@ def list_saved_codes(directory="codes"):
             print(f"  {filename} ({size_mb:.2f} MB)")
 
 if __name__ == "__main__":
-    # Create some example codes
-    print("Creating example codes...")
+    print("Creating structured codes for LP decoding...")
+    print("="*60)
     
-    # Small LDPC for testing
-    save_ldpc_code(n=8, k=4, max_check_degree=3, max_var_degree=2)
+    # Small codes - perfect for testing and development
+    print("\n1. SMALL CODES (for testing):")
+    save_hamming_code_subset(r=3, max_codewords=16)      # [7,4,3] - 16 codewords
+    save_repetition_code(n=5)   # [5,1,5] - 2 codewords  
+    save_repetition_code(n=7)   # [7,1,7] - 2 codewords
+    save_parity_check_code(n=4) # [4,3,2] - 8 codewords
+    save_parity_check_code(n=6) # [6,5,2] - 32 codewords
     
-    # Medium LDPC
-    save_ldpc_code(n=15, k=11, max_check_degree=3, max_var_degree=2)
-
-    # Large LDPC
-    save_ldpc_code(n=32, k=24, max_check_degree=4, max_var_degree=3)
-
-    save_ldpc_code(n=48, k=32, max_check_degree=4, max_var_degree=3)  # Rate 0.67
-
-    save_ldpc_code(n=64, k=48, max_check_degree=5, max_var_degree=3)  # Rate 0.75
-
-    save_ldpc_code(n=128, k=96, max_check_degree=6, max_var_degree=4) # Rate 0.75
-
-    # WiFi 802.11n LDPC-like parameters
-    #save_ldpc_code(n=648, k=432, max_check_degree=7, max_var_degree=3)  # Rate 2/3
-
-    # DVB-S2 LDPC-like parameters  
-    #save_ldpc_code(n=64800, k=43200, max_check_degree=13, max_var_degree=3) # Rate 2/3
-
+    # Medium codes - good balance of complexity and manageability
+    print("\n2. MEDIUM CODES (for serious testing):")
+    save_hamming_code_subset(r=4, max_codewords=2048)      # [15,11,3] - 2048 codewords
+    save_simplex_code(r=4)      # [15,4,8] - 16 codewords
+    save_parity_check_code(n=8) # [8,7,2] - 128 codewords
+    save_repetition_code(n=9)   # [9,1,9] - 2 codewords
     
-    # Skip regular LDPC for now due to complexity
-    print("Skipping regular LDPC generation...")
+    # Larger codes - for performance testing
+    print("\n3. LARGER CODES (for performance testing):")
+    save_hamming_code_subset(r=5, max_codewords=10000)  # [31,26,3] - subset of 67M codewords
+    save_simplex_code(r=5)      # [31,5,16] - 32 codewords
+    save_parity_check_code(n=10) # [10,9,2] - 512 codewords
+    save_parity_check_code(n=12) # [12,11,2] - 2048 codewords
     
-    # Repetition codes
-    save_repetition_code(n=5)
-    save_repetition_code(n=7)
+    # Very large codes - only if you need them
+    print("\n4. LARGE CODES (only if needed - might be slow):")
+    try:
+        # Comment out if too slow
+        # save_hamming_code(r=6)      # [63,57,3] - huge number of codewords
+        save_simplex_code(r=6)      # [63,6,32] - 64 codewords
+        save_repetition_code(n=15)  # [15,1,15] - 2 codewords
+        print("Large codes generated successfully!")
+    except Exception as e:
+        print(f"Skipped large codes due to: {e}")
     
     # List all created codes
-    print("\n" + "="*50)
+    print("\n" + "="*60)
+    print("SUMMARY:")
     list_saved_codes()
     
-    # Test loading
-    print("\n" + "="*50)
+    # Test loading one code
+    print("\n" + "="*60)
     print("Testing code loading...")
     try:
-        code_data = load_code("codes/ldpc_8_4_3_2.pkl")
-        print("Successfully loaded LDPC code!")
+        code_data = load_code("codes/hamming_7_4_3.pkl")
+        print("✓ Successfully loaded Hamming code!")
+        
+        # Show first few codewords
+        codewords = code_data['codewords']
+        print(f"\nFirst 8 codewords:")
+        for i, cw in enumerate(codewords[:8]):
+            print(f"  {i:2d}: {cw}")
+            
     except FileNotFoundError:
-        print("Could not find saved code file")
+        print("✗ Could not find saved code file")
+    except Exception as e:
+        print(f"✗ Error loading code: {e}")
+    
+    print("\n" + "="*60)
+    print("RECOMMENDATIONS FOR LP DECODING:")
+    print("- Start with hamming_7_4_3.pkl (small, perfect for debugging)")
+    print("- Use hamming_15_11_4.pkl for serious testing") 
+    print("- Try simplex codes for very clean constraints")
+    print("- Parity check codes have simple single constraint")
+    print("="*60)

@@ -23,27 +23,69 @@ def generate_ldpc_code(n, k, max_check_degree=3, max_var_degree=2, seed=42):
     m = n - k  # number of parity checks
     print(f"Generating LDPC code: n={n}, k={k}, m={m}")
     
-    # For very small codes, ensure we have enough constraints
-    if m < 3:
-        print(f"Warning: Only {m} parity checks for n={n}, k={k}. Adding more constraints.")
-        m = max(3, n // 3)  # Ensure at least 3 checks
+    # Generate better structured H matrix
+    H = generate_better_parity_matrix(n, m, max_check_degree, max_var_degree)
     
-    # Create sparse parity check matrix H
+    # Convert to systematic form and find actual rank
+    H_sys, rank = convert_to_systematic(H)
+    actual_k = n - rank
+    
+    print(f"Matrix rank: {rank}, Actual k: {actual_k}")
+    
+    # Generate codewords efficiently
+    if actual_k <= 18:  # Full enumeration for reasonable sizes
+        codewords = generate_all_codewords_exhaustive(H, n, actual_k)
+    else:
+        # Sample approach for very large codes
+        codewords = generate_sample_codewords_improved(H, n, actual_k, num_samples=min(10000, 2**min(actual_k, 15)))
+    
+    # Remove duplicates
+    unique_codewords = []
+    seen = set()
+    for cw in codewords:
+        cw_tuple = tuple(cw)
+        if cw_tuple not in seen:
+            seen.add(cw_tuple)
+            unique_codewords.append(cw)
+    
+    codewords = unique_codewords
+    
+    # Create local constraints from parity checks
+    local_constraints = create_ldpc_local_constraints(H)
+    
+    density = np.mean(H)
+    code_info = {
+        'n': n,
+        'k': actual_k,
+        'm': rank,
+        'designed_k': k,
+        'density': density,
+        'max_check_degree': max_check_degree,
+        'max_var_degree': max_var_degree,
+        'num_codewords': len(codewords),
+        'num_constraints': len(local_constraints)
+    }
+    
+    print(f"Generated {len(codewords)} unique codewords (expected 2^{actual_k} = {2**actual_k})")
+    print(f"Created {len(local_constraints)} local constraints")
+    
+    return codewords, local_constraints, H, code_info
+
+def generate_better_parity_matrix(n, m, max_check_degree, max_var_degree):
+    """Generate a better structured parity check matrix."""
     H = np.zeros((m, n), dtype=int)
     
-    # Fill H with sparse pattern - ensure each check has at least 2 variables
+    # Ensure each check has at least 2 variables
     for i in range(m):
-        # Each check involves 2 to max_check_degree variables
         num_vars = np.random.randint(2, min(max_check_degree + 1, n + 1))
         var_indices = np.random.choice(n, size=num_vars, replace=False)
         H[i, var_indices] = 1
     
-    # Ensure each variable participates in at least 1 check and at most max_var_degree checks
+    # Balance variable degrees
     for j in range(n):
         current_degree = np.sum(H[:, j])
-        
         if current_degree == 0:
-            # Variable not connected, connect to a random check
+            # Connect to at least one check
             check_idx = np.random.randint(m)
             H[check_idx, j] = 1
         elif current_degree > max_var_degree:
@@ -53,95 +95,112 @@ def generate_ldpc_code(n, k, max_check_degree=3, max_var_degree=2, seed=42):
             remove_indices = np.random.choice(check_indices, size=excess, replace=False)
             H[remove_indices, j] = 0
     
-    density = np.mean(H)
-    print(f"Parity check matrix density: {density:.3f}")
+    return H
+
+def convert_to_systematic(H):
+    """Convert parity check matrix to systematic form and find rank."""
+    m, n = H.shape
+    H_work = H.copy()
     
-    # Generate codewords using systematic encoding
+    # Gaussian elimination in GF(2)
+    rank = 0
+    for col in range(min(m, n)):
+        # Find pivot
+        pivot_row = None
+        for row in range(rank, m):
+            if H_work[row, col] == 1:
+                pivot_row = row
+                break
+        
+        if pivot_row is None:
+            continue
+        
+        # Swap rows if needed
+        if pivot_row != rank:
+            H_work[[rank, pivot_row]] = H_work[[pivot_row, rank]]
+        
+        # Eliminate other 1s in this column
+        for row in range(m):
+            if row != rank and H_work[row, col] == 1:
+                H_work[row] = (H_work[row] + H_work[rank]) % 2
+        
+        rank += 1
+    
+    return H_work, rank
+
+def generate_all_codewords_exhaustive(H, n, k):
+    """Generate all valid codewords by exhaustive search."""
     codewords = []
+    max_search = min(2**n, 2**20)  # Cap the search space
     
-    # For systematic LDPC, we need to solve Hx = 0
-    # This is complex for general LDPC, so we'll use a simplified approach
+    print(f"Searching up to {max_search} patterns for valid codewords...")
     
-    if k <= 12:  # For small codes, try all information sequences
-        for info_bits in itertools.product([0, 1], repeat=k):
-            x = solve_ldpc_encoding(info_bits, H, n, k, m)
-            if x is not None:
-                codewords.append(x.tolist())
-    else:
-        # For larger codes, generate a subset
-        print(f"Warning: k={k} too large for full enumeration, generating sample")
-        num_samples = min(1000, 2**min(k, 10))
-        attempts = 0
-        while len(codewords) < num_samples and attempts < num_samples * 3:
-            info_bits = np.random.randint(0, 2, k)
-            x = solve_ldpc_encoding(info_bits, H, n, k, m)
-            if x is not None:
-                codeword_tuple = tuple(x.tolist())
-                if codeword_tuple not in {tuple(cw) for cw in codewords}:
-                    codewords.append(x.tolist())
-            attempts += 1
+    for i in range(max_search):
+        # Convert to binary vector
+        x = np.array([(i >> j) & 1 for j in range(n)])
+        
+        # Check if this satisfies H*x = 0 (mod 2)
+        syndrome = np.dot(H, x) % 2
+        if np.all(syndrome == 0):
+            codewords.append(x.tolist())
+        
+        if len(codewords) >= 2**k:
+            break  # Found enough codewords
     
-    # If we couldn't generate enough codewords, fall back to simpler method
-    if len(codewords) < 4:
-        print("Warning: Systematic encoding failed, using brute force approach")
-        codewords = generate_codewords_brute_force(H, n, min(16, 2**min(k, 4)))
+    return codewords
+
+def generate_sample_codewords_improved(H, n, k, num_samples=1000):
+    """Generate sample codewords using improved random search."""
+    codewords = []
+    max_attempts = num_samples * 50
+    attempts = 0
     
-    # Create local constraints from parity checks
-    local_constraints = create_ldpc_local_constraints(H)
+    print(f"Sampling up to {num_samples} codewords...")
     
-    code_info = {
-        'n': n,
-        'k': k,
-        'm': m,
-        'density': density,
-        'max_check_degree': max_check_degree,
-        'max_var_degree': max_var_degree,
-        'num_codewords': len(codewords),
-        'num_constraints': len(local_constraints)
-    }
+    while len(codewords) < num_samples and attempts < max_attempts:
+        # Random binary vector
+        x = np.random.randint(0, 2, n)
+        
+        # Check if it satisfies H*x = 0
+        syndrome = np.dot(H, x) % 2
+        if np.all(syndrome == 0):
+            codewords.append(x.tolist())
+        
+        attempts += 1
+        
+        if attempts % 5000 == 0:
+            print(f"  Found {len(codewords)} codewords after {attempts} attempts")
     
-    print(f"Generated {len(codewords)} unique codewords")
-    print(f"Created {len(local_constraints)} local constraints")
-    
-    return codewords, local_constraints, H, code_info
+    return codewords
 
 def solve_ldpc_encoding(info_bits, H, n, k, m):
     """
     Solve for a valid codeword given information bits.
     This is a simplified systematic encoder.
     """
+    # This function is kept for compatibility but improved implementation
+    # is now in the main generate function
+    
+    # Try systematic approach
     x = np.zeros(n, dtype=int)
-    x[:k] = info_bits
+    x[:len(info_bits)] = info_bits
     
-    # Try to solve for remaining bits
-    for i in range(m):
-        syndrome = 0
-        parity_positions = []
+    # Simple approach: try random parity bits until we find a valid codeword
+    for attempt in range(1000):
+        # Set random parity bits
+        x[len(info_bits):] = np.random.randint(0, 2, n - len(info_bits))
         
-        # Calculate syndrome from known bits
-        for j in range(n):
-            if j < k:
-                syndrome ^= (H[i, j] * x[j])
-            elif H[i, j] == 1:
-                parity_positions.append(j)
-        
-        # Set one parity bit to satisfy the constraint
-        if parity_positions:
-            x[parity_positions[0]] = syndrome
+        # Check if valid
+        syndrome = np.dot(H, x) % 2
+        if np.all(syndrome == 0):
+            return x
     
-    # Verify this is actually a valid codeword
-    syndrome_check = np.dot(H, x) % 2
-    if np.all(syndrome_check == 0):
-        return x
-    else:
-        return None
+    return None
 
 def generate_codewords_brute_force(H, n, max_codewords=16):
     """Brute force search for valid codewords."""
     codewords = []
-    
-    # Try up to 2^min(n,16) possibilities
-    max_attempts = min(2**n, 2**16, max_codewords * 100)
+    max_attempts = min(2**n, 2**18, max_codewords * 1000)
     
     for i in range(max_attempts):
         if len(codewords) >= max_codewords:
@@ -170,33 +229,8 @@ def encode_systematic_ldpc(info_bits, H, n, k):
     Returns:
         x: encoded codeword or None if encoding fails
     """
-    x = np.zeros(n, dtype=int)
-    x[:k] = info_bits
-    
-    m = n - k
-    
-    # Try to solve for parity bits
-    # This is a simplified approach - in practice, you'd need more sophisticated encoding
-    for i in range(m):
-        parity = 0
-        # Calculate parity from information bits
-        for j in range(k):
-            parity ^= (H[i, j] * x[j])
-        
-        # Find parity bit positions for this check
-        parity_positions = [j for j in range(k, n) if H[i, j] == 1]
-        
-        if parity_positions:
-            # Set the first available parity bit
-            x[parity_positions[0]] = parity
-    
-    # Verify this is a valid codeword
-    syndrome = np.dot(H, x) % 2
-    if np.all(syndrome == 0):
-        return x
-    else:
-        # Try a different approach or return None
-        return None
+    # This is now handled better in the main generation function
+    return solve_ldpc_encoding(info_bits, H, n, k, n-k)
 
 def create_ldpc_local_constraints(H):
     """
@@ -215,7 +249,7 @@ def create_ldpc_local_constraints(H):
         # Find variables involved in this parity check
         variables = [j for j in range(n) if H[i, j] == 1]
         
-        if len(variables) == 0:
+        if len(variables) <= 1:
             continue
         
         # Generate all valid patterns for this parity check (even parity)
@@ -224,7 +258,7 @@ def create_ldpc_local_constraints(H):
             if sum(pattern) % 2 == 0:  # Even parity constraint
                 valid_patterns.append(list(pattern))
         
-        if valid_patterns:
+        if len(valid_patterns) > 1:  # Skip trivial constraints
             local_constraints.append({
                 'variables': variables,
                 'valid_patterns': valid_patterns,
@@ -272,16 +306,14 @@ def generate_regular_ldpc(n, j, k):
                 var = edges[check * k + i]
                 H[check, var] = 1
     
-    # Generate codewords and constraints
+    # Generate codewords using the same improved method
     info_bits = n - m
-    codewords = []
     
-    # Generate sample codewords
-    for _ in range(min(100, 2**info_bits)):
-        info = np.random.randint(0, 2, info_bits)
-        x = encode_systematic_ldpc(info, H, n, info_bits)
-        if x is not None:
-            codewords.append(x.tolist())
+    # Use the improved generation method
+    if info_bits <= 15:
+        codewords = generate_all_codewords_exhaustive(H, n, info_bits)
+    else:
+        codewords = generate_sample_codewords_improved(H, n, info_bits, num_samples=min(1000, 2**min(info_bits, 12)))
     
     local_constraints = create_ldpc_local_constraints(H)
     
@@ -295,6 +327,8 @@ def generate_regular_ldpc(n, j, k):
         'num_codewords': len(codewords),
         'num_constraints': len(local_constraints)
     }
+    
+    print(f"Generated {len(codewords)} codewords for regular LDPC")
     
     return codewords, local_constraints, H, code_info
 

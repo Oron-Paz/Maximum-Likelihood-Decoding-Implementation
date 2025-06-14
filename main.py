@@ -31,7 +31,7 @@ def test_ldpc_code():
     print("TEST: LDPC Code [15,11] with Fundamental Relaxation")
     print("-" * 45)
     
-    filename = "./codes/ldpc_128_96_6_4.pkl"
+    filename = "./codes/hamming_15_11_4_subset_2048.pkl"
     
     try:
         # Loading codewords and local constraints
