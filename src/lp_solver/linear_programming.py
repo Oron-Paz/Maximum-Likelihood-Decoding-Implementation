@@ -177,6 +177,251 @@ def compute_gamma(received, crossover_prob):
     
     return gamma
 
+def lp_decode_box_relaxation(received_message, codewords_list, channel_error_prob=0.1):
+    """
+    Ultra-simple relaxation: just use box constraints [0,1]^n.
+    This is the most relaxed polytope possible.
+    """
+    received = np.array(received_message)
+    n = len(received)
+    gamma = compute_gamma(received, channel_error_prob)
+    
+    print(f"Box relaxation: just [0,1]^n constraints")
+    
+    # Only box constraints: 0 ≤ x_i ≤ 1 for all i
+    bounds = [(0, 1) for _ in range(n)]
+    
+    # Solve LP: min γᵀx subject to x ∈ [0,1]^n
+    result = linprog(method='highs', c=gamma, bounds=bounds)
+    
+    if not result.success:
+        print(f"LP failed: {result.message}")
+        return None, float('inf')
+    
+    print(f"Box LP solution x: {result.x}")
+    print(f"LP optimal cost: {result.fun:.6f}")
+    
+    # Find closest codeword
+    codewords = np.array(codewords_list)
+    distances = np.sum((codewords - result.x)**2, axis=1)
+    closest_idx = np.argmin(distances)
+    best_codeword = codewords[closest_idx]
+    
+    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
+    print(f"Closest codeword: {best_codeword}")
+    
+    return best_codeword.tolist(), result.fun
+
+def lp_decode_simple_parity_relaxation(received_message, codewords_list, channel_error_prob=0.1, 
+                                       local_constraints=None):
+    """
+    Simple relaxation: only use parity check constraints, ignore complex local patterns.
+    """
+    received = np.array(received_message)
+    n = len(received)
+    gamma = compute_gamma(received, channel_error_prob)
+    
+    print(f"Simple parity relaxation")
+    
+    # Extract simple parity constraints from local_constraints
+    A_ub_list = []
+    b_ub_list = []
+    
+    if local_constraints:
+        for constraint in local_constraints:
+            variables = constraint['variables']
+            
+            # Simple parity constraint: sum of variables should be even
+            # This means: sum(x_i for i in variables) ≤ |variables| - 0.5
+            # and: sum(x_i for i in variables) ≥ 0.5
+            # But we'll use even simpler: sum ≤ |variables| and sum ≥ 0
+            
+            # Upper bound: sum(x_i) ≤ len(variables)
+            A_upper = np.zeros(n)
+            for var_idx in variables:
+                if var_idx < n:
+                    A_upper[var_idx] = 1
+            A_ub_list.append(A_upper)
+            b_ub_list.append(len(variables))
+            
+            # Could add lower bound, but let's keep it simple
+    
+    if A_ub_list:
+        A_ub = np.vstack(A_ub_list)
+        b_ub = np.array(b_ub_list)
+        print(f"Using {len(b_ub)} simple parity constraints")
+    else:
+        A_ub = None
+        b_ub = None
+        print("No constraints - falling back to box relaxation")
+    
+    # Box constraints
+    bounds = [(0, 1) for _ in range(n)]
+    
+    # Solve LP
+    result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
+    
+    if not result.success:
+        print(f"LP failed: {result.message}")
+        return None, float('inf')
+    
+    print(f"Simple LP solution x: {result.x}")
+    print(f"LP optimal cost: {result.fun:.6f}")
+    
+    # Find closest codeword
+    codewords = np.array(codewords_list)
+    distances = np.sum((codewords - result.x)**2, axis=1)
+    closest_idx = np.argmin(distances)
+    best_codeword = codewords[closest_idx]
+    
+    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
+    print(f"Closest codeword: {best_codeword}")
+    
+    return best_codeword.tolist(), result.fun
+
+def lp_decode_subset_relaxation(received_message, codewords_list, channel_error_prob=0.1, 
+                                local_constraints=None, max_constraints=10):
+    """
+    Use only a subset of local constraints to keep the problem manageable.
+    """
+    received = np.array(received_message)
+    n = len(received)
+    gamma = compute_gamma(received, channel_error_prob)
+    
+    print(f"Subset relaxation using max {max_constraints} constraints")
+    
+    # Use only first few local constraints
+    if local_constraints and len(local_constraints) > max_constraints:
+        local_constraints = local_constraints[:max_constraints]
+        print(f"Reduced from many constraints to {len(local_constraints)}")
+    
+    # Collect constraints but limit the number of patterns
+    A_ub_list = []
+    b_ub_list = []
+    
+    if local_constraints:
+        for i, constraint in enumerate(local_constraints):
+            variables = constraint['variables']
+            valid_patterns = constraint['valid_patterns']
+            
+            # Limit to first 16 patterns to avoid explosion
+            valid_patterns = valid_patterns[:16]
+            
+            print(f"Constraint {i}: variables {variables}, using {len(valid_patterns)} patterns")
+            
+            if len(valid_patterns) <= 1:
+                continue
+            
+            # Create convex hull of limited patterns
+            try:
+                if len(valid_patterns) == 2 and len(variables) == 1:
+                    # Special case for 1D
+                    min_val = min(p[0] for p in valid_patterns)
+                    max_val = max(p[0] for p in valid_patterns)
+                    A_local = np.array([[-1], [1]])
+                    b_local = np.array([-min_val, max_val])
+                else:
+                    hull = ConvexHull(valid_patterns)
+                    A_local = hull.equations[:, :-1]
+                    b_local = -hull.equations[:, -1]
+            except Exception as e:
+                print(f"Skipping constraint {i}: {e}")
+                continue
+            
+            # Embed into global space
+            A_global = np.zeros((A_local.shape[0], n))
+            for j, var_idx in enumerate(variables):
+                if var_idx < n:
+                    A_global[:, var_idx] = A_local[:, j]
+            
+            A_ub_list.append(A_global)
+            b_ub_list.append(b_local)
+    
+    if A_ub_list:
+        A_ub = np.vstack(A_ub_list)
+        b_ub = np.hstack(b_ub_list)
+        print(f"Total constraints: {len(b_ub)} (much better!)")
+    else:
+        A_ub = None
+        b_ub = None
+    
+    # Box constraints
+    bounds = [(0, 1) for _ in range(n)]
+    
+    # Solve LP
+    result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
+    
+    if not result.success:
+        print(f"LP failed: {result.message}")
+        return None, float('inf')
+    
+    print(f"Subset LP solution x: {result.x}")
+    print(f"LP optimal cost: {result.fun:.6f}")
+    
+    # Find closest codeword
+    codewords = np.array(codewords_list)
+    distances = np.sum((codewords - result.x)**2, axis=1)
+    closest_idx = np.argmin(distances)
+    best_codeword = codewords[closest_idx]
+    
+    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
+    print(f"Closest codeword: {best_codeword}")
+    
+    return best_codeword.tolist(), result.fun
+
+def lp_decode_random_sampling_relaxation(received_message, codewords_list, channel_error_prob=0.1, 
+                                         num_sample_codewords=100):
+    """
+    Use only a random sample of codewords to define the polytope.
+    This is like the "core" relaxation approach.
+    """
+    received = np.array(received_message)
+    n = len(received)
+    gamma = compute_gamma(received, channel_error_prob)
+    
+    print(f"Random sampling relaxation using {num_sample_codewords} codewords")
+    
+    # Sample a subset of codewords
+    if len(codewords_list) > num_sample_codewords:
+        indices = np.random.choice(len(codewords_list), size=num_sample_codewords, replace=False)
+        sample_codewords = [codewords_list[i] for i in indices]
+    else:
+        sample_codewords = codewords_list
+    
+    sample_codewords = np.array(sample_codewords)
+    print(f"Using {len(sample_codewords)} sampled codewords")
+    
+    # Create convex hull of sampled codewords
+    try:
+        hull = ConvexHull(sample_codewords)
+        A_ub = hull.equations[:, :-1]
+        b_ub = -hull.equations[:, -1]
+        print(f"Sampled ConvexHull: {len(A_ub)} constraints")
+    except Exception as e:
+        print(f"ConvexHull failed: {e}, falling back to box relaxation")
+        return lp_decode_box_relaxation(received_message, codewords_list, channel_error_prob)
+    
+    # Solve LP
+    result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub)
+    
+    if not result.success:
+        print(f"LP failed: {result.message}")
+        return None, float('inf')
+    
+    print(f"Sampling LP solution x: {result.x}")
+    print(f"LP optimal cost: {result.fun:.6f}")
+    
+    # Find closest codeword from FULL codebook
+    codewords = np.array(codewords_list)
+    distances = np.sum((codewords - result.x)**2, axis=1)
+    closest_idx = np.argmin(distances)
+    best_codeword = codewords[closest_idx]
+    
+    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
+    print(f"Closest codeword: {best_codeword}")
+    
+    return best_codeword.tolist(), result.fun
+
 def load_code_from_file(filename):
     """
     Load code data from saved pickle file.
