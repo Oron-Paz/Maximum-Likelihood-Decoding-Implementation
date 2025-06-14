@@ -3,27 +3,37 @@ from scipy.optimize import linprog
 from scipy.spatial import ConvexHull
 import itertools
 
-def lp_decode(received_message, codewords_list, channel_error_prob=0.1, relaxation='exact', parity_check_matrix=None): 
+def lp_decode(received_message, codewords_list, channel_error_prob=0.1, relaxation='exact', local_constraints=None):
+    """
+    LP decoder with different relaxation methods.
+    
+    Args:
+        received_message: received vector
+        codewords_list: list of valid codewords  
+        channel_error_prob: channel crossover probability
+        relaxation: 'exact' or 'fundamental'
+        local_constraints: list of local constraint specifications for fundamental relaxation
+    """
     received = np.array(received_message)
     n = len(received)
     
     gamma = compute_gamma(received, channel_error_prob)
     print(f"Gamma (objective): {gamma}")
     
-    # add more if statements for different methods suggested in the paper
     if relaxation == 'exact':
         return lp_decode_exact(received, codewords_list, gamma)
     elif relaxation == 'fundamental':
-        if parity_check_matrix is None:
-            raise ValueError("Parity check matrix required for fundamental polytope relaxation")
-        return lp_decode_fundamental_polytope(received, parity_check_matrix, gamma, codewords_list)
+        if local_constraints is None:
+            raise ValueError("local_constraints required for fundamental relaxation")
+        return lp_decode_fundamental_relaxation(received, codewords_list, gamma, local_constraints)
     else:
         raise ValueError(f"Unknown relaxation: {relaxation}")
 
 def lp_decode_exact(received, codewords_list, gamma):
+    """Exact LP decoding using the full codeword polytope."""
     codewords = np.array(codewords_list)
     
-    hull = ConvexHull(codewords) #convexHull from scipy returns equations that define the polytopes shapes used bellow
+    hull = ConvexHull(codewords)  # ConvexHull from scipy returns equations that define the polytope shapes used below
     A_ub = hull.equations[:, :-1]  # Normal vectors
     b_ub = -hull.equations[:, -1]  # Constants
     
@@ -31,9 +41,8 @@ def lp_decode_exact(received, codewords_list, gamma):
     
     # Solve LP: min γᵀx subject to Ax ≤ b
     # https://docs.scipy.org/doc/scipy/reference/optimize.linprog-interior-point.html 
-    #check out above link for info on whats happening bellow, but baisicly A_ub = coefficents of constraints as a matrix
+    # Check out above link for info on what's happening below, but basically A_ub = coefficients of constraints as a matrix
     # b_ub = the actual value we're constrained on as a vector to match each row in A
-
     result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub)
 
     if not result.success:
@@ -53,148 +62,103 @@ def lp_decode_exact(received, codewords_list, gamma):
     
     return best_codeword.tolist(), result.fun
 
-def lp_decode_fundamental_polytope(received, parity_check_matrix, gamma, codewords_list):
+def lp_decode_fundamental_relaxation(received, codewords_list, gamma, local_constraints):
     """
-    LP decoder using the fundamental polytope relaxation as described in 
-    Feldman-Wainwright-Karger paper. This implements the relaxation shown
-    in the PDF images.
-    
-    The fundamental polytope P is defined by:
-    P = {ω ∈ ℝⁿ | ∀i ∈ I : 0 ≤ ωᵢ ≤ 1 and
-                  ∀j ∈ J, ∀I'ⱼ ⊆ Iⱼ, |I'ⱼ| odd :
-                  ∑ᵢ∈I'ⱼ ωᵢ + ∑ᵢ∈(Iⱼ\I'ⱼ) (1 - ωᵢ) ≤ |Iⱼ| - 1}
+    Fundamental relaxation using intersection of local constraint polytopes.
+    This implements the relaxation described in: https://arxiv.org/pdf/cs/0602087
     
     Args:
-        received: Received vector
-        parity_check_matrix: Parity check matrix H
-        gamma: Objective function coefficients
-        codewords_list: List of codewords (for final decoding step)
+        received: received vector
+        codewords_list: list of valid codewords (for final rounding)
+        gamma: objective function coefficients
+        local_constraints: list of dicts, each containing:
+            - 'variables': indices of variables involved in this constraint
+            - 'valid_patterns': list of valid local patterns for these variables
     """
-    H = np.array(parity_check_matrix)
-    m, n = H.shape
     codewords = np.array(codewords_list)
+    n = len(gamma)
     
-    print(f"Building fundamental polytope constraints...")
-    print(f"Parity check matrix: {m} × {n}")
+    print(f"Fundamental relaxation with {len(local_constraints)} local constraints")
     
-    # Build constraints for fundamental polytope
-    A_ub = []
-    b_ub = []
+    # Collect all constraints from local polytopes
+    A_ub_list = []
+    b_ub_list = []
     
-    # 1. Box constraints: 0 ≤ ωᵢ ≤ 1
-    # Upper bounds: ωᵢ ≤ 1
-    A_ub.extend(np.eye(n))
-    b_ub.extend([1.0] * n)
-    
-    # Lower bounds: -ωᵢ ≤ 0 (equivalent to ωᵢ ≥ 0)
-    A_ub.extend(-np.eye(n))
-    b_ub.extend([0.0] * n)
-    
-    # 2. Parity check constraints
-    # For each parity check j, and each odd-sized subset I'ⱼ of the support Iⱼ:
-    # ∑ᵢ∈I'ⱼ ωᵢ + ∑ᵢ∈(Iⱼ\I'ⱼ) (1 - ωᵢ) ≤ |Iⱼ| - 1
-    # 
-    # This can be rewritten as:
-    # ∑ᵢ∈I'ⱼ ωᵢ + ∑ᵢ∈(Iⱼ\I'ⱼ) (1 - ωᵢ) ≤ |Iⱼ| - 1
-    # ∑ᵢ∈I'ⱼ ωᵢ + |Iⱼ\I'ⱼ| - ∑ᵢ∈(Iⱼ\I'ⱼ) ωᵢ ≤ |Iⱼ| - 1
-    # ∑ᵢ∈I'ⱼ ωᵢ - ∑ᵢ∈(Iⱼ\I'ⱼ) ωᵢ ≤ |Iⱼ| - 1 - |Iⱼ\I'ⱼ|
-    # ∑ᵢ∈I'ⱼ ωᵢ - ∑ᵢ∈(Iⱼ\I'ⱼ) ωᵢ ≤ |I'ⱼ| - 1
-    
-    constraint_count = 0
-    for j in range(m):  # For each parity check
-        # Find support of j-th parity check (Iⱼ)
-        support_j = np.where(H[j, :] == 1)[0]
-        support_size = len(support_j)
+    for i, constraint in enumerate(local_constraints):
+        variables = constraint['variables']
+        valid_patterns = np.array(constraint['valid_patterns'])
         
-        if support_size == 0:
+        print(f"Local constraint {i}: variables {variables}, {len(valid_patterns)} patterns")
+        
+        if len(valid_patterns) <= 1:
+            continue  # Skip trivial constraints
+            
+        # Create convex hull of local patterns
+        try:
+            if len(valid_patterns) == 2 and valid_patterns.shape[1] == 1:
+                # Special case for 1D constraints
+                min_val = np.min(valid_patterns)
+                max_val = np.max(valid_patterns)
+                A_local = np.array([[-1], [1]])
+                b_local = np.array([-min_val, max_val])
+            else:
+                hull = ConvexHull(valid_patterns)
+                A_local = hull.equations[:, :-1]
+                b_local = -hull.equations[:, -1]
+        except Exception as e:
+            print(f"Warning: ConvexHull failed for constraint {i}: {e}")
             continue
-            
-        # Generate all odd-sized subsets of the support
-        max_subset_size = min(support_size, 15)  # Limit to prevent explosion
         
-        for subset_size in range(1, max_subset_size + 1, 2):  # Odd sizes only
-            # Generate all subsets of this odd size
-            from itertools import combinations
-            for subset in combinations(support_j, subset_size):
-                I_prime = set(subset)
-                I_complement = set(support_j) - I_prime
-                
-                # Build constraint vector
-                constraint_vec = np.zeros(n)
-                
-                # Coefficients for variables in I'ⱼ: +1
-                for i in I_prime:
-                    constraint_vec[i] = 1.0
-                
-                # Coefficients for variables in Iⱼ\I'ⱼ: -1  
-                for i in I_complement:
-                    constraint_vec[i] = -1.0
-                
-                # Right-hand side: |I'ⱼ| - 1
-                rhs = len(I_prime) - 1
-                
-                A_ub.append(constraint_vec)
-                b_ub.append(rhs)
-                constraint_count += 1
-                
-                # Limit total constraints to prevent memory issues
-                if constraint_count > 10000:
-                    print(f"  Limiting to {constraint_count} parity constraints")
-                    break
-            
-            if constraint_count > 10000:
-                break
+        # Embed local constraints into global space
+        A_global = np.zeros((A_local.shape[0], n))
+        for j, var_idx in enumerate(variables):
+            if var_idx < n:  # Safety check
+                A_global[:, var_idx] = A_local[:, j]
         
-        if constraint_count > 10000:
-            break
+        A_ub_list.append(A_global)
+        b_ub_list.append(b_local)
     
-    A_ub = np.array(A_ub)
-    b_ub = np.array(b_ub)
+    if not A_ub_list:
+        print("Warning: No valid local constraints, falling back to box constraints")
+        # Fallback to simple box constraints [0,1]^n
+        A_ub = np.vstack([np.eye(n), -np.eye(n)])
+        b_ub = np.hstack([np.ones(n), np.zeros(n)])
+    else:
+        A_ub = np.vstack(A_ub_list)
+        b_ub = np.hstack(b_ub_list)
     
-    print(f"Fundamental polytope constraints: {len(A_ub)} total")
-    print(f"  Box constraints: {2*n}")
-    print(f"  Parity constraints: {constraint_count}")
+    print(f"Total constraints: {len(b_ub)}")
     
-    # Solve LP: min γᵀω subject to A_ub ω ≤ b_ub
-    result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub)
+    # Add box constraints [0,1] for each variable (this is the fundamental polytope P)
+    bounds = [(0, 1) for _ in range(n)]
     
+    # Solve LP: min γᵀx subject to x ∈ ∩_{j∈J} conv(C_j) and x ∈ [0,1]^n
+    result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub, bounds=bounds)
+
     if not result.success:
         print(f"LP failed: {result.message}")
         return None, float('inf')
     
-    print(f"\nLP solution ω: {result.x}")
+    print(f"\nFundamental LP solution x: {result.x}")
     print(f"LP optimal cost: {result.fun:.6f}")
     
-    # Check if solution is integral (a codeword)
-    solution = result.x
-    is_integral = np.allclose(solution, np.round(solution), atol=1e-6)
-    
-    if is_integral:
-        # Round to binary and check if it's a valid codeword
-        binary_solution = np.round(solution).astype(int)
-        solution_tuple = tuple(binary_solution.tolist())
-        codeword_tuples = set(tuple(cw) for cw in codewords_list)
-        
-        if solution_tuple in codeword_tuples:
-            print("LP solution is a valid codeword!")
-            return binary_solution.tolist(), result.fun
-        else:
-            print("LP solution is integral but not a valid codeword (pseudocodeword)")
-    else:
-        print("LP solution is fractional (pseudocodeword)")
-    
-    # Find closest valid codeword to LP solution
-    distances = np.sum((codewords - solution)**2, axis=1)
+    # Find closest codeword to LP solution
+    distances = np.sum((codewords - result.x)**2, axis=1)
     closest_idx = np.argmin(distances)
     best_codeword = codewords[closest_idx]
     
-    print(f"Distance to closest codeword: {np.sqrt(distances[closest_idx]):.6f}")
+    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
     print(f"Closest codeword: {best_codeword}")
     
     return best_codeword.tolist(), result.fun
 
-
 def compute_gamma(received, crossover_prob):
+    """
+    Compute log-likelihood ratios for binary symmetric channel.
+    For BSC with crossover probability p:
+    - If received bit is 0, we want to favor x_i = 0 
+    - If received bit is 1, we want to favor x_i = 1
+    """
     received_array = np.array(received)
     p = crossover_prob
     
@@ -205,9 +169,246 @@ def compute_gamma(received, crossover_prob):
     
     for i in range(len(received_array)):
         if received_array[i] == 0:
-            
-            gamma[i] = -np.log((1-p) / p)  
+            # Favor x_i = 0, so cost is positive when x_i = 1
+            gamma[i] = np.log((1-p) / p)  
         else:  
-            gamma[i] = -np.log(p / (1-p))  
+            # Favor x_i = 1, so cost is negative when x_i = 1
+            gamma[i] = np.log(p / (1-p))  
     
     return gamma
+
+def load_code_from_file(filename):
+    """
+    Load code data from saved pickle file.
+    
+    Args:
+        filename: path to pickle file containing code data
+        
+    Returns:
+        codewords, local_constraints, code_info
+    """
+    import pickle
+    
+    with open(filename, 'rb') as f:
+        code_data = pickle.load(f)
+    
+    codewords = code_data['codewords']
+    local_constraints = code_data['local_constraints']
+    code_info = code_data['code_info']
+    
+    print(f"Loaded {code_info['code_type']} code:")
+    print(f"  n={code_info['n']}, k={code_info['k']}")
+    print(f"  {len(codewords)} codewords, {len(local_constraints)} local constraints")
+    
+    return codewords, local_constraints, code_info
+
+def test_lp_decoding(filename, received_message, channel_error_prob=0.1, compare_methods=True):
+    """
+    Test LP decoding methods on a specific received message.
+    
+    Args:
+        filename: path to saved code file
+        received_message: received vector to decode
+        channel_error_prob: channel crossover probability
+        compare_methods: whether to compare exact vs fundamental methods
+    """
+    import time
+    
+    # Load code
+    codewords, local_constraints, code_info = load_code_from_file(filename)
+    
+    print(f"\n{'='*60}")
+    print(f"TESTING LP DECODING")
+    print(f"{'='*60}")
+    print(f"Code: {code_info['code_type']}, n={code_info['n']}, k={code_info['k']}")
+    print(f"Received: {received_message}")
+    print(f"Channel error prob: {channel_error_prob}")
+    
+    results = {}
+    
+    # Test exact LP decoding
+    if compare_methods:
+        print(f"\n--- EXACT LP DECODING ---")
+        try:
+            start_time = time.time()
+            exact_result, exact_cost = lp_decode(
+                received_message, codewords, channel_error_prob, relaxation='exact'
+            )
+            exact_time = time.time() - start_time
+            
+            results['exact'] = {
+                'decoded': exact_result,
+                'cost': exact_cost,
+                'time': exact_time,
+                'success': True
+            }
+            print(f"Exact LP result: {exact_result}")
+            print(f"Decode time: {exact_time:.6f}s")
+            
+        except Exception as e:
+            print(f"Exact LP failed: {e}")
+            results['exact'] = {'success': False, 'error': str(e)}
+    
+    # Test fundamental relaxation
+    print(f"\n--- FUNDAMENTAL RELAXATION ---")
+    try:
+        start_time = time.time()
+        fund_result, fund_cost = lp_decode(
+            received_message, codewords, channel_error_prob, 
+            relaxation='fundamental', local_constraints=local_constraints
+        )
+        fund_time = time.time() - start_time
+        
+        results['fundamental'] = {
+            'decoded': fund_result,
+            'cost': fund_cost,
+            'time': fund_time,
+            'success': True
+        }
+        print(f"Fundamental result: {fund_result}")
+        print(f"Decode time: {fund_time:.6f}s")
+        
+    except Exception as e:
+        print(f"Fundamental relaxation failed: {e}")
+        results['fundamental'] = {'success': False, 'error': str(e)}
+    
+    # Compare results
+    if compare_methods and results.get('exact', {}).get('success') and results.get('fundamental', {}).get('success'):
+        print(f"\n--- COMPARISON ---")
+        exact_decoded = results['exact']['decoded']
+        fund_decoded = results['fundamental']['decoded']
+        
+        if exact_decoded == fund_decoded:
+            print("✓ Both methods produced the same result")
+        else:
+            print("✗ Methods produced different results:")
+            print(f"  Exact:       {exact_decoded}")
+            print(f"  Fundamental: {fund_decoded}")
+        
+        speedup = results['exact']['time'] / results['fundamental']['time']
+        print(f"Fundamental relaxation speedup: {speedup:.2f}x")
+    
+    return results
+
+def batch_test_decoding(filename, num_tests=10, channel_error_prob=0.1):
+    """
+    Run batch testing of LP decoding methods.
+    
+    Args:
+        filename: path to saved code file
+        num_tests: number of random tests to run
+        channel_error_prob: channel crossover probability
+    """
+    import time
+    import random
+    
+    # Load code
+    codewords, local_constraints, code_info = load_code_from_file(filename)
+    
+    print(f"\n{'='*60}")
+    print(f"BATCH TESTING LP DECODING")
+    print(f"{'='*60}")
+    print(f"Code: {code_info['code_type']}, n={code_info['n']}, k={code_info['k']}")
+    print(f"Number of tests: {num_tests}")
+    print(f"Channel error prob: {channel_error_prob}")
+    
+    results = {
+        'exact': {'times': [], 'successes': 0, 'total': 0},
+        'fundamental': {'times': [], 'successes': 0, 'total': 0},
+        'agreements': 0
+    }
+    
+    np.random.seed(42)  # For reproducibility
+    
+    for test_num in range(num_tests):
+        # Generate random test case
+        true_codeword = random.choice(codewords)
+        n = len(true_codeword)
+        
+        # Add random errors
+        error_pattern = np.random.binomial(1, channel_error_prob, n)
+        received = (np.array(true_codeword) + error_pattern) % 2
+        
+        print(f"\nTest {test_num + 1}/{num_tests}")
+        print(f"True codeword: {true_codeword}")
+        print(f"Received:      {received.tolist()}")
+        
+        gamma = compute_gamma(received, channel_error_prob)
+        
+        # Test exact method (skip if too slow for large codes)
+        if code_info['n'] <= 15:  # Only test exact for small codes
+            try:
+                start_time = time.time()
+                exact_result, _ = lp_decode_exact(received, codewords, gamma)
+                exact_time = time.time() - start_time
+                
+                results['exact']['times'].append(exact_time)
+                results['exact']['total'] += 1
+                if exact_result == true_codeword:
+                    results['exact']['successes'] += 1
+                
+                print(f"Exact: {exact_result} ({'✓' if exact_result == true_codeword else '✗'})")
+                
+            except Exception as e:
+                print(f"Exact failed: {e}")
+                results['exact']['total'] += 1
+        
+        # Test fundamental method
+        try:
+            start_time = time.time()
+            fund_result, _ = lp_decode_fundamental_relaxation(received, codewords, gamma, local_constraints)
+            fund_time = time.time() - start_time
+            
+            results['fundamental']['times'].append(fund_time)
+            results['fundamental']['total'] += 1
+            if fund_result == true_codeword:
+                results['fundamental']['successes'] += 1
+            
+            print(f"Fundamental: {fund_result} ({'✓' if fund_result == true_codeword else '✗'})")
+            
+            # Check agreement (only if both methods ran)
+            if (code_info['n'] <= 15 and results['exact']['total'] == results['fundamental']['total'] 
+                and 'exact_result' in locals() and exact_result == fund_result):
+                results['agreements'] += 1
+                
+        except Exception as e:
+            print(f"Fundamental failed: {e}")
+            results['fundamental']['total'] += 1
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print("BATCH TEST SUMMARY")
+    print(f"{'='*60}")
+    
+    for method in ['exact', 'fundamental']:
+        data = results[method]
+        if data['total'] > 0:
+            success_rate = data['successes'] / data['total']
+            avg_time = np.mean(data['times']) if data['times'] else 0
+            
+            print(f"\n{method.upper()} METHOD:")
+            print(f"  Success rate: {success_rate:.2%} ({data['successes']}/{data['total']})")
+            print(f"  Average time: {avg_time:.6f}s")
+    
+    if results['exact']['total'] > 0 and results['fundamental']['total'] > 0:
+        agreement_rate = results['agreements'] / min(results['exact']['total'], results['fundamental']['total'])
+        print(f"\nAgreement rate: {agreement_rate:.2%}")
+        
+        if len(results['exact']['times']) > 0 and len(results['fundamental']['times']) > 0:
+            speedup = np.mean(results['exact']['times']) / np.mean(results['fundamental']['times'])
+            print(f"Average speedup: {speedup:.2f}x")
+    
+    return results
+
+if __name__ == "__main__":
+    # Example usage
+    print("Testing LP relaxation decoder...")
+    
+    # You would use this with your saved codes:
+    # test_lp_decoding("codes/ldpc_8_4_3_2.pkl", [1, 0, 1, 0, 1, 0, 1, 0])
+    # batch_test_decoding("codes/ldpc_15_11_3_2.pkl", num_tests=20)
+    
+    print("To use this decoder:")
+    print("1. First run the code_saver.py to generate and save codes")
+    print("2. Then use test_lp_decoding() or batch_test_decoding() with the saved files")
+    print("3. Example: test_lp_decoding('codes/ldpc_8_4_3_2.pkl', [1,0,1,0,1,0,1,0])")
