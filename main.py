@@ -3,9 +3,9 @@ from src.lp_solver.linear_programming import lp_decode
 from src.lp_solver.linear_programming import (
     lp_decode_box_relaxation,
     lp_decode_simple_parity_relaxation, 
-    lp_decode_subset_relaxation,
-    lp_decode_random_sampling_relaxation,
-)
+    lp_decode_subset_relaxation)
+
+from itertools import combinations
 
 from utils.corrupt import corrupt_message
 import pickle
@@ -34,10 +34,10 @@ def load_code_data(filename):
     return codewords, local_constraints, code_info
 
 def test_ldpc_code():
-    print("TEST: LDPC Code [15,11] with Fundamental Relaxation")
+    print("TEST: LDPC 32bit 10M codewords")
     print("-" * 45)
     
-    filename = "./codes/hamming_15_11_4_subset_2048.pkl"
+    filename = "./codes/hamming_31_26_5_subset_10000000.pkl"
     
     try:
         # Loading codewords and local constraints
@@ -49,11 +49,11 @@ def test_ldpc_code():
         np.random.seed(42)  # For reproducibility
         original_idx = np.random.randint(len(codewords))
         original = codewords[original_idx]
-        corrupted = corrupt_message(original, 1)  # Add 1 error
+        corrupted = corrupt_message(original, 3)  # Add 1 error
         
         # Ensure that the corrupted word isn't a valid codeword
         while tuple(corrupted) in codewords_set:
-            corrupted = corrupt_message(original, 1)
+            corrupted = corrupt_message(original, 3)
 
         print(f"Original:  {original}")
         print(f"Corrupted: {corrupted}")
@@ -74,29 +74,29 @@ def test_ldpc_code():
         print(f"Execution time: {naive_execution_time:.6f}s")
         print(f"Correct decoding: {naive_decoded_word == original}")
         
-        # Test 2: LP decoder (fundamental relaxation)
-        print("\n" + "="*60)
-        print("LP DECODER (fundamental relaxation):")
-        print("-" * 45)
+        # # Test 2: LP decoder (fundamental relaxation)
+        # print("\n" + "="*60)
+        # print("LP DECODER (fundamental relaxation):")
+        # print("-" * 45)
         
-        try:
-            start = time.perf_counter()
-            lp_relaxed_decoded_word, lp_relaxed_cost = lp_decode(
-                corrupted, codewords, channel_error_prob=0.1, 
-                relaxation='fundamental', local_constraints=local_constraints
-            )
-            end = time.perf_counter()
-            lp_relaxed_execution_time = end - start
+        # try:
+        #     start = time.perf_counter()
+        #     lp_relaxed_decoded_word, lp_relaxed_cost = lp_decode(
+        #         corrupted, codewords, channel_error_prob=0.1, 
+        #         relaxation='fundamental', local_constraints=local_constraints
+        #     )
+        #     end = time.perf_counter()
+        #     lp_relaxed_execution_time = end - start
             
-            print(f"Decoded word: {lp_relaxed_decoded_word}")
-            print(f"LP cost: {lp_relaxed_cost:.6f}")
-            print(f"Execution time: {lp_relaxed_execution_time:.6f}s")
-            print(f"Correct decoding: {lp_relaxed_decoded_word == original}")
+        #     print(f"Decoded word: {lp_relaxed_decoded_word}")
+        #     print(f"LP cost: {lp_relaxed_cost:.6f}")
+        #     print(f"Execution time: {lp_relaxed_execution_time:.6f}s")
+        #     print(f"Correct decoding: {lp_relaxed_decoded_word == original}")
             
-        except Exception as e:
-            print(f"Fundamental relaxation failed: {e}")
-            lp_relaxed_decoded_word = None
-            lp_relaxed_execution_time = float('inf')
+        # except Exception as e:
+        #     print(f"Fundamental relaxation failed: {e}")
+        #     lp_relaxed_decoded_word = None
+        #     lp_relaxed_execution_time = float('inf')
         
         #Test 3: LP decoder (box relaxation)
         print("\n" + "="*60)
@@ -104,7 +104,7 @@ def test_ldpc_code():
         print("-" * 45)
         
         start = time.perf_counter()
-        lp_box_relaxed_decoded_word, lp_box_relaxed_cost = lp_decode_box_relaxation(corrupted, codewords, 0.1,)
+        lp_box_relaxed_decoded_word, lp_box_relaxed_cost = lp_decode_box_relaxation(corrupted, codewords, 0.1)
         end = time.perf_counter()
         lp_box_relaxed_execution_time = end - start
         
@@ -142,21 +142,6 @@ def test_ldpc_code():
         print(f"LP cost: {lp_subset_cost:.6f}")
         print(f"Execution time: {lp_subset_execution_time:.6f}s")
         print(f"Correct decoding: {lp_subset_decoded_word == original}")
-            
-        # #Test 6: LP decoder (random sampling relaxation)
-        # print("\n" + "="*60)
-        # print("LP DECODER (random sampling relaxation):")
-        # print("-" * 45)
-        
-        # start = time.perf_counter()
-        # lp_sampling_decoded_word, lp_sampling_cost = lp_decode_random_sampling_relaxation(corrupted, codewords, 0.1)
-        # end = time.perf_counter()
-        # lp_sampling_execution_time = end - start
-        
-        # print(f"Decoded word: {lp_sampling_decoded_word}")
-        # print(f"LP cost: {lp_sampling_cost:.6f}")
-        # print(f"Execution time: {lp_sampling_execution_time:.6f}s")
-        # print(f"Correct decoding: {lp_sampling_decoded_word == original}")
 
         # # Comparison
         # print("\n" + "="*60)
@@ -192,6 +177,7 @@ def test_ldpc_code():
         print(f"Error in LDPC code test: {e}")
         import traceback
         traceback.print_exc()
+
 
 if __name__ == "__main__":  
     main()

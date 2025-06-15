@@ -3,6 +3,9 @@ from scipy.optimize import linprog
 from scipy.spatial import ConvexHull
 import itertools
 
+#trying someething new:
+import cvxpy as cp
+
 def lp_decode(received_message, codewords_list, channel_error_prob=0.1, relaxation='exact', local_constraints=None):
     """
     LP decoder with different relaxation methods.
@@ -142,40 +145,9 @@ def lp_decode_fundamental_relaxation(received, codewords_list, gamma, local_cons
     print(f"\nFundamental LP solution x: {result.x}")
     print(f"LP optimal cost: {result.fun:.6f}")
     
-    # Find closest codeword to LP solution
-    distances = np.sum((codewords - result.x)**2, axis=1)
-    closest_idx = np.argmin(distances)
-    best_codeword = codewords[closest_idx]
+    decoded_word = result.x.astype(int).tolist()
     
-    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
-    print(f"Closest codeword: {best_codeword}")
-    
-    return best_codeword.tolist(), result.fun
-
-def compute_gamma(received, crossover_prob):
-    """
-    Compute log-likelihood ratios for binary symmetric channel.
-    For BSC with crossover probability p:
-    - If received bit is 0, we want to favor x_i = 0 
-    - If received bit is 1, we want to favor x_i = 1
-    """
-    received_array = np.array(received)
-    p = crossover_prob
-    
-    # Avoid log(0) issues
-    p = max(min(p, 0.999), 0.001)
-    
-    gamma = np.zeros(len(received_array))
-    
-    for i in range(len(received_array)):
-        if received_array[i] == 0:
-            # Favor x_i = 0, so cost is positive when x_i = 1
-            gamma[i] = np.log((1-p) / p)  
-        else:  
-            # Favor x_i = 1, so cost is negative when x_i = 1
-            gamma[i] = np.log(p / (1-p))  
-    
-    return gamma
+    return decoded_word, result.fun
 
 def lp_decode_box_relaxation(received_message, codewords_list, channel_error_prob=0.1):
     """
@@ -192,7 +164,7 @@ def lp_decode_box_relaxation(received_message, codewords_list, channel_error_pro
     bounds = [(0, 1) for _ in range(n)]
     
     # Solve LP: min γᵀx subject to x ∈ [0,1]^n
-    result = linprog(method='highs', c=gamma, bounds=bounds)
+    result = linprog(method='highs', c=gamma, bounds=bounds, options={'presolve': False, 'time_limit': 1.0})
     
     if not result.success:
         print(f"LP failed: {result.message}")
@@ -201,16 +173,9 @@ def lp_decode_box_relaxation(received_message, codewords_list, channel_error_pro
     print(f"Box LP solution x: {result.x}")
     print(f"LP optimal cost: {result.fun:.6f}")
     
-    # Find closest codeword
-    codewords = np.array(codewords_list)
-    distances = np.sum((codewords - result.x)**2, axis=1)
-    closest_idx = np.argmin(distances)
-    best_codeword = codewords[closest_idx]
+    decoded_word = result.x.astype(int).tolist()
     
-    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
-    print(f"Closest codeword: {best_codeword}")
-    
-    return best_codeword.tolist(), result.fun
+    return decoded_word, result.fun
 
 def lp_decode_simple_parity_relaxation(received_message, codewords_list, channel_error_prob=0.1, 
                                        local_constraints=None):
@@ -267,17 +232,9 @@ def lp_decode_simple_parity_relaxation(received_message, codewords_list, channel
     
     print(f"Simple LP solution x: {result.x}")
     print(f"LP optimal cost: {result.fun:.6f}")
+
     
-    # Find closest codeword
-    codewords = np.array(codewords_list)
-    distances = np.sum((codewords - result.x)**2, axis=1)
-    closest_idx = np.argmin(distances)
-    best_codeword = codewords[closest_idx]
-    
-    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
-    print(f"Closest codeword: {best_codeword}")
-    
-    return best_codeword.tolist(), result.fun
+    return result.x.astype(int).tolist(), result.fun
 
 def lp_decode_subset_relaxation(received_message, codewords_list, channel_error_prob=0.1, 
                                 local_constraints=None, max_constraints=10):
@@ -358,69 +315,32 @@ def lp_decode_subset_relaxation(received_message, codewords_list, channel_error_
     print(f"Subset LP solution x: {result.x}")
     print(f"LP optimal cost: {result.fun:.6f}")
     
-    # Find closest codeword
-    codewords = np.array(codewords_list)
-    distances = np.sum((codewords - result.x)**2, axis=1)
-    closest_idx = np.argmin(distances)
-    best_codeword = codewords[closest_idx]
-    
-    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
-    print(f"Closest codeword: {best_codeword}")
-    
-    return best_codeword.tolist(), result.fun
+    return result.x.astype(int).tolist(), result.fun
 
-def lp_decode_random_sampling_relaxation(received_message, codewords_list, channel_error_prob=0.1, 
-                                         num_sample_codewords=100):
+def compute_gamma(received, crossover_prob):
     """
-    Use only a random sample of codewords to define the polytope.
-    This is like the "core" relaxation approach.
+    Compute log-likelihood ratios for binary symmetric channel.
+    For BSC with crossover probability p:
+    - If received bit is 0, we want to favor x_i = 0 
+    - If received bit is 1, we want to favor x_i = 1
     """
-    received = np.array(received_message)
-    n = len(received)
-    gamma = compute_gamma(received, channel_error_prob)
+    received_array = np.array(received)
+    p = crossover_prob
     
-    print(f"Random sampling relaxation using {num_sample_codewords} codewords")
+    # Avoid log(0) issues
+    p = max(min(p, 0.999), 0.001)
     
-    # Sample a subset of codewords
-    if len(codewords_list) > num_sample_codewords:
-        indices = np.random.choice(len(codewords_list), size=num_sample_codewords, replace=False)
-        sample_codewords = [codewords_list[i] for i in indices]
-    else:
-        sample_codewords = codewords_list
+    gamma = np.zeros(len(received_array))
     
-    sample_codewords = np.array(sample_codewords)
-    print(f"Using {len(sample_codewords)} sampled codewords")
+    for i in range(len(received_array)):
+        if received_array[i] == 0:
+            # Favor x_i = 0, so cost is positive when x_i = 1
+            gamma[i] = np.log((1-p) / p)  
+        else:  
+            # Favor x_i = 1, so cost is negative when x_i = 1
+            gamma[i] = np.log(p / (1-p))  
     
-    # Create convex hull of sampled codewords
-    try:
-        hull = ConvexHull(sample_codewords)
-        A_ub = hull.equations[:, :-1]
-        b_ub = -hull.equations[:, -1]
-        print(f"Sampled ConvexHull: {len(A_ub)} constraints")
-    except Exception as e:
-        print(f"ConvexHull failed: {e}, falling back to box relaxation")
-        return lp_decode_box_relaxation(received_message, codewords_list, channel_error_prob)
-    
-    # Solve LP
-    result = linprog(method='highs', c=gamma, A_ub=A_ub, b_ub=b_ub)
-    
-    if not result.success:
-        print(f"LP failed: {result.message}")
-        return None, float('inf')
-    
-    print(f"Sampling LP solution x: {result.x}")
-    print(f"LP optimal cost: {result.fun:.6f}")
-    
-    # Find closest codeword from FULL codebook
-    codewords = np.array(codewords_list)
-    distances = np.sum((codewords - result.x)**2, axis=1)
-    closest_idx = np.argmin(distances)
-    best_codeword = codewords[closest_idx]
-    
-    print(f"LP solution distance to codeword: {np.sqrt(distances[closest_idx]):.6f}")
-    print(f"Closest codeword: {best_codeword}")
-    
-    return best_codeword.tolist(), result.fun
+    return gamma
 
 def load_code_from_file(filename):
     """

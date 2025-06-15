@@ -242,7 +242,7 @@ if __name__ == "__main__":
     
     # Larger codes - for performance testing
     print("\n3. LARGER CODES (for performance testing):")
-    save_hamming_code_subset(r=5, max_codewords=10000)  # [31,26,3] - subset of 67M codewords
+    save_hamming_code_subset(r=5, max_codewords=10000000)  # [31,26,3] - subset of 67M codewords
     save_simplex_code(r=5)      # [31,5,16] - 32 codewords
     save_parity_check_code(n=10) # [10,9,2] - 512 codewords
     save_parity_check_code(n=12) # [12,11,2] - 2048 codewords
