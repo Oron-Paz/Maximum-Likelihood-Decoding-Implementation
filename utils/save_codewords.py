@@ -1,4 +1,6 @@
-# Updated save_codewords.py to use Hamming codes instead of LDPC
+# Save codewords file, currently needs to be ran before running main file, 
+# adjust the function calls at the bottom to generate whichever files
+# you want to test on. But for the sake of the assigment doesnt really matter
 
 import numpy as np
 import pickle
@@ -23,40 +25,6 @@ def save_hamming_code_subset(r, max_codewords, filename=None):
     print(f"Generating Hamming [{n},{k},3] code subset with r={r}, max_codewords={max_codewords}...")
     
     codewords, local_constraints, H, code_info = generate_hamming_code(r, max_codewords=max_codewords)
-    
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    
-    # Package everything together
-    code_data = {
-        'codewords': codewords,
-        'local_constraints': local_constraints,
-        'parity_check_matrix': H.tolist() if H is not None else None,
-        'code_info': code_info,
-        'code_type': 'hamming'
-    }
-    
-    # Save as pickle file for faster loading
-    with open(filename, 'wb') as f:
-        pickle.dump(code_data, f)
-    
-    print(f"Saved {len(codewords)} codewords to {filename}")
-    print(f"File size: {os.path.getsize(filename) / (1024*1024):.2f} MB")
-    
-    # Print code information
-    print_code_info(code_info)
-    
-    return filename
-    """Generate and save Hamming code to file"""
-    n = 2**r - 1
-    k = n - r
-    
-    if filename is None:
-        filename = f"codes/hamming_{n}_{k}_{r}.pkl"
-    
-    print(f"Generating Hamming [{n},{k},3] code with r={r}...")
-    
-    codewords, local_constraints, H, code_info = generate_hamming_code(r)
     
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(filename), exist_ok=True)

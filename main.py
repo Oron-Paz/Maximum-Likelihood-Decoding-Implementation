@@ -3,7 +3,10 @@ from src.lp_solver.linear_programming import lp_decode
 from src.lp_solver.linear_programming import (
     lp_decode_box_relaxation,
     lp_decode_simple_parity_relaxation, 
-    lp_decode_subset_relaxation)
+    lp_decode_subset_relaxation,
+    lp_decode_syndrome_ml_relaxation,
+    lp_decode_syndrome_polytope_relaxation,
+    extract_parity_check_matrix)
 
 from itertools import combinations
 
@@ -34,10 +37,10 @@ def load_code_data(filename):
     return codewords, local_constraints, code_info
 
 def test_ldpc_code():
-    print("TEST: LDPC 32bit 10M codewords")
+    print("TEST: Naive VS Different Relaxation Technqiues:")
     print("-" * 45)
     
-    filename = "./codes/hamming_31_26_5_subset_10000000.pkl"
+    filename = "./codes/hamming_15_11_4_subset_2048.pkl"
     
     try:
         # Loading codewords and local constraints
@@ -45,11 +48,14 @@ def test_ldpc_code():
         codewords_set = set(tuple(cw) for cw in codewords)
         print("Done loading codewords, now creating corrupted message...\n")
 
+        parity_check_matrix = extract_parity_check_matrix(codewords)
+        print(f"Generated parity check matrix H: {parity_check_matrix.shape}")
+
         # Choose a random original message
         np.random.seed(42)  # For reproducibility
         original_idx = np.random.randint(len(codewords))
         original = codewords[original_idx]
-        corrupted = corrupt_message(original, 3)  # Add 1 error
+        corrupted = corrupt_message(original, 1) 
         
         # Ensure that the corrupted word isn't a valid codeword
         while tuple(corrupted) in codewords_set:
@@ -74,30 +80,25 @@ def test_ldpc_code():
         print(f"Execution time: {naive_execution_time:.6f}s")
         print(f"Correct decoding: {naive_decoded_word == original}")
         
-        # # Test 2: LP decoder (fundamental relaxation)
-        # print("\n" + "="*60)
-        # print("LP DECODER (fundamental relaxation):")
-        # print("-" * 45)
+        # Test 2: LP decoder (fundamental relaxation)
+        print("\n" + "="*60)
+        print("LP DECODER (fundamental relaxation):")
+        print("-" * 45)
         
-        # try:
-        #     start = time.perf_counter()
-        #     lp_relaxed_decoded_word, lp_relaxed_cost = lp_decode(
-        #         corrupted, codewords, channel_error_prob=0.1, 
-        #         relaxation='fundamental', local_constraints=local_constraints
-        #     )
-        #     end = time.perf_counter()
-        #     lp_relaxed_execution_time = end - start
-            
-        #     print(f"Decoded word: {lp_relaxed_decoded_word}")
-        #     print(f"LP cost: {lp_relaxed_cost:.6f}")
-        #     print(f"Execution time: {lp_relaxed_execution_time:.6f}s")
-        #     print(f"Correct decoding: {lp_relaxed_decoded_word == original}")
-            
-        # except Exception as e:
-        #     print(f"Fundamental relaxation failed: {e}")
-        #     lp_relaxed_decoded_word = None
-        #     lp_relaxed_execution_time = float('inf')
+        start = time.perf_counter()
+        lp_relaxed_decoded_word, lp_relaxed_cost = lp_decode(
+            corrupted, codewords, channel_error_prob=0.1, 
+            relaxation='fundamental', local_constraints=local_constraints
+        )
+        end = time.perf_counter()
+        lp_relaxed_execution_time = end - start
         
+        print(f"Decoded word: {lp_relaxed_decoded_word}")
+        print(f"LP cost: {lp_relaxed_cost:.6f}")
+        print(f"Execution time: {lp_relaxed_execution_time:.6f}s")
+        print(f"Correct decoding: {lp_relaxed_decoded_word == original}")
+        print(f"Is the same as corrupted message: {lp_relaxed_decoded_word == corrupted}")
+
         #Test 3: LP decoder (box relaxation)
         print("\n" + "="*60)
         print("LP DECODER (box relaxation):")
@@ -112,6 +113,7 @@ def test_ldpc_code():
         print(f"LP cost: {lp_box_relaxed_cost:.6f}")
         print(f"Execution time: {lp_box_relaxed_execution_time:.6f}s")
         print(f"Correct decoding: {lp_box_relaxed_decoded_word == original}")
+        print(f"Is the same as corrupted message: {lp_box_relaxed_decoded_word == corrupted}")
 
         #Test 4: LP decoder (simple parity relaxation)
         print("\n" + "="*60)
@@ -127,21 +129,67 @@ def test_ldpc_code():
         print(f"LP cost: {lp_simple_parity_cost:.6f}")
         print(f"Execution time: {lp_simple_parity_execution_time:.6f}s")
         print(f"Correct decoding: {lp_simple_parity_decoded_word == original}")
+        print(f"Is the same as corrupted message: {lp_simple_parity_decoded_word == corrupted}")
 
-        #Test 5: LP decoder (subset relaxation)
+
+        # #Test 5: LP decoder (subset ML relaxation)
+        # print("\n" + "="*60)
+        # print("LP DECODER (subset relaxation):")
+        # print("-" * 45)
+        
+        # start = time.perf_counter()
+        # lp_syndrome_ML_decoded_word, lp_syndrome_ML_cost = lp_decode_subset_relaxation(corrupted, codewords, 0.1, local_constraints=local_constraints)
+        # end = time.perf_counter()
+        # lp_syndrome_ML_execution_time = end - start
+        
+        # print(f"Decoded word: {lp_syndrome_ML_decoded_word}")
+        # print(f"LP cost: {lp_syndrome_ML_cost:.6f}")
+        # print(f"Execution time: {lp_syndrome_ML_execution_time:.6f}s")
+        # print(f"Correct decoding: {lp_syndrome_ML_decoded_word == original}")
+        # print(f"Is the same as corrupted message: {lp_syndrome_ML_decoded_word == corrupted}")
+
+        # Test 6: LP decoder (syndrome ML relaxation) 
         print("\n" + "="*60)
-        print("LP DECODER (subset relaxation):")
+        print("LP DECODER (syndrome ML relaxation):")
         print("-" * 45)
         
         start = time.perf_counter()
-        lp_subset_decoded_word, lp_subset_cost = lp_decode_subset_relaxation(corrupted, codewords, 0.1, local_constraints=local_constraints)
+        lp_syndrome_ML_decoded_word, lp_syndrome_ML_cost = lp_decode_syndrome_ml_relaxation(
+            corrupted, 
+            codewords, 
+            channel_error_prob=0.1, 
+            parity_check_matrix=parity_check_matrix,  # Required parameter
+            max_error_weight=3  # Limit search for efficiency
+        )
         end = time.perf_counter()
-        lp_subset_execution_time = end - start
+        lp_syndrome_ML_execution_time = end - start
         
-        print(f"Decoded word: {lp_subset_decoded_word}")
-        print(f"LP cost: {lp_subset_cost:.6f}")
-        print(f"Execution time: {lp_subset_execution_time:.6f}s")
-        print(f"Correct decoding: {lp_subset_decoded_word == original}")
+        print(f"Decoded word: {lp_syndrome_ML_decoded_word}")
+        print(f"LP cost: {lp_syndrome_ML_cost:.6f}")
+        print(f"Execution time: {lp_syndrome_ML_execution_time:.6f}s")
+        print(f"Correct decoding: {lp_syndrome_ML_decoded_word == original}")
+        print(f"Is the same as corrupted message: {lp_syndrome_ML_decoded_word == corrupted}")
+
+        # Test 7: LP decoder (syndrome polytope relaxation)
+        print("\n" + "="*60)
+        print("LP DECODER (syndrome polytope relaxation):")
+        print("-" * 45)
+        
+        start = time.perf_counter()
+        lp_syndrome_polytope_decoded_word, lp_syndrome_polytope_cost = lp_decode_syndrome_polytope_relaxation(
+            corrupted, 
+            codewords, 
+            channel_error_prob=0.1,
+            parity_check_matrix=parity_check_matrix  # Required parameter
+        )
+        end = time.perf_counter()
+        lp_syndrome_polytope_execution_time = end - start
+        
+        print(f"Decoded word: {lp_syndrome_polytope_decoded_word}")
+        print(f"LP cost: {lp_syndrome_polytope_cost:.6f}")
+        print(f"Execution time: {lp_syndrome_polytope_execution_time:.6f}s")
+        print(f"Correct decoding: {lp_syndrome_polytope_decoded_word == original}")
+        print(f"Is the same as corrupted message: {lp_syndrome_polytope_decoded_word == corrupted}")
 
         # # Comparison
         # print("\n" + "="*60)

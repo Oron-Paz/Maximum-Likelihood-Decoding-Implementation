@@ -1,3 +1,7 @@
+# Hamming codeword generator of different types, more easy to compute 
+# largest subsets of but still computationaly hard for over 10M 
+# 32 bit codewords, although it is good enough for testing purposes.
+
 import numpy as np
 import itertools
 
@@ -285,27 +289,3 @@ def generate_dual_hamming_code(r, max_codewords=None):
     
     print(f"Generated {len(codewords)} codewords")
     return codewords, local_constraints, H, code_info
-
-# Test the codes
-if __name__ == "__main__":
-    print("="*60)
-    print("TESTING STRUCTURED CODES WITH SUBSET SAMPLING")
-    print("="*60)
-    
-    # Test Hamming codes
-    print("\n1. HAMMING CODES:")
-    codewords, constraints, H, info = generate_hamming_code(r=3)
-    print(f"   Hamming [{info['n']},{info['k']},3]: {len(codewords)} codewords")
-    
-    # Test large Hamming with subset
-    codewords, constraints, H, info = generate_hamming_code(r=5, max_codewords=1000)
-    print(f"   Hamming [{info['n']},{info['k']},3] (subset): {len(codewords)}/{info['total_possible_codewords']} codewords")
-    
-    # Test simplex codes
-    print("\n2. SIMPLEX CODES:")
-    codewords, constraints, H, info = generate_dual_hamming_code(r=4, max_codewords=16)
-    print(f"   Simplex [{info['n']},{info['k']},{2**(4-1)}]: {len(codewords)} codewords")
-    
-    print("\n" + "="*60)
-    print("Subset sampling works! LP will work fine with partial codewords.")
-    print("="*60)

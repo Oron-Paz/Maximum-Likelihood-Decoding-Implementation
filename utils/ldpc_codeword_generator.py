@@ -1,3 +1,10 @@
+# LDPC Codeword generator file (low density parity codes) -> more sparse codewords
+# tend to lead to better results since there is a further hamming distance
+# between each word therefore more clear seperation but computationaly very hard to compute
+# large subsets of, I could only generate up to around 100K 32 bit codewords of this type
+# which the naive solver still works great for therefore not a real show of the LP
+# strengths
+
 import numpy as np
 import itertools
 
