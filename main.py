@@ -1,23 +1,24 @@
 from src.naive_solver.naive import findMinimumDistance
-from src.lp_solver.linear_programming import lp_decode
 from src.lp_solver.linear_programming import (
+    lp_decode,
     lp_decode_box_relaxation,
     lp_decode_simple_parity_relaxation, 
     lp_decode_subset_relaxation,
     lp_decode_syndrome_ml_relaxation,
     lp_decode_syndrome_polytope_relaxation,
-    extract_parity_check_matrix)
-
-from itertools import combinations
+    extract_parity_check_matrix
+)
 
 from utils.corrupt import corrupt_message
+from utils.print_utils import (
+    run_decoder_test,
+    print_test_setup,
+    print_comparison_summary
+)
 import pickle
-import time
 import numpy as np
 
 def main():
-    print("Testing Paper's LP Approach vs Naive Method")
-    print("\n" + "="*60)
     test_ldpc_code()
 
 def load_code_data(filename):
@@ -37,9 +38,6 @@ def load_code_data(filename):
     return codewords, local_constraints, code_info
 
 def test_ldpc_code():
-    print("TEST: Naive VS Different Relaxation Technqiues:")
-    print("-" * 45)
-    
     filename = "./codes/hamming_15_11_4_subset_2048.pkl"
     
     try:
@@ -61,160 +59,85 @@ def test_ldpc_code():
         while tuple(corrupted) in codewords_set:
             corrupted = corrupt_message(original, 3)
 
-        print(f"Original:  {original}")
-        print(f"Corrupted: {corrupted}")
-        print(f"Codebook size: {len(codewords):,} codewords")
-        print(f"Code parameters: n={code_info['n']}, k={code_info['k']}, rate={code_info['k']/code_info['n']:.3f}")
+        # Print test setup
+        print_test_setup(original, corrupted, codewords, code_info)
+        
+        # Store results for comparison
+        results = []
         
         # Test 1: Naive decoder
-        print("\n" + "="*60)
-        print("NAIVE DECODER:")
-        print("-" * 45)
-        start = time.perf_counter()
-        naive_decoded_word, hamming_distance = findMinimumDistance(corrupted, codewords)
-        end = time.perf_counter()
-        naive_execution_time = end - start
-
-        print(f"Decoded word: {naive_decoded_word}")
-        print(f"Hamming Distance: {hamming_distance}")
-        print(f"Execution time: {naive_execution_time:.6f}s")
-        print(f"Correct decoding: {naive_decoded_word == original}")
+        decoded, cost, exec_time = run_decoder_test(
+            decoder_func=findMinimumDistance,
+            method_name="NAIVE DECODER",
+            corrupted_word=corrupted,
+            original_word=original,
+            codewords=codewords
+        )
+        results.append(("Naive", decoded, cost, exec_time, decoded == original))
         
         # Test 2: LP decoder (fundamental relaxation)
-        print("\n" + "="*60)
-        print("LP DECODER (fundamental relaxation):")
-        print("-" * 45)
-        
-        start = time.perf_counter()
-        lp_relaxed_decoded_word, lp_relaxed_cost = lp_decode(
-            corrupted, codewords, channel_error_prob=0.1, 
-            relaxation='fundamental', local_constraints=local_constraints
-        )
-        end = time.perf_counter()
-        lp_relaxed_execution_time = end - start
-        
-        print(f"Decoded word: {lp_relaxed_decoded_word}")
-        print(f"LP cost: {lp_relaxed_cost:.6f}")
-        print(f"Execution time: {lp_relaxed_execution_time:.6f}s")
-        print(f"Correct decoding: {lp_relaxed_decoded_word == original}")
-        print(f"Is the same as corrupted message: {lp_relaxed_decoded_word == corrupted}")
-
-        #Test 3: LP decoder (box relaxation)
-        print("\n" + "="*60)
-        print("LP DECODER (box relaxation):")
-        print("-" * 45)
-        
-        start = time.perf_counter()
-        lp_box_relaxed_decoded_word, lp_box_relaxed_cost = lp_decode_box_relaxation(corrupted, codewords, 0.1)
-        end = time.perf_counter()
-        lp_box_relaxed_execution_time = end - start
-        
-        print(f"Decoded word: {lp_box_relaxed_decoded_word}")
-        print(f"LP cost: {lp_box_relaxed_cost:.6f}")
-        print(f"Execution time: {lp_box_relaxed_execution_time:.6f}s")
-        print(f"Correct decoding: {lp_box_relaxed_decoded_word == original}")
-        print(f"Is the same as corrupted message: {lp_box_relaxed_decoded_word == corrupted}")
-
-        #Test 4: LP decoder (simple parity relaxation)
-        print("\n" + "="*60)
-        print("LP DECODER (simple parity relaxation):")
-        print("-" * 45)
-        
-        start = time.perf_counter()
-        lp_simple_parity_decoded_word, lp_simple_parity_cost = lp_decode_simple_parity_relaxation(corrupted, codewords, 0.1, local_constraints=local_constraints)
-        end = time.perf_counter()
-        lp_simple_parity_execution_time = end - start
-        
-        print(f"Decoded word: {lp_simple_parity_decoded_word}")
-        print(f"LP cost: {lp_simple_parity_cost:.6f}")
-        print(f"Execution time: {lp_simple_parity_execution_time:.6f}s")
-        print(f"Correct decoding: {lp_simple_parity_decoded_word == original}")
-        print(f"Is the same as corrupted message: {lp_simple_parity_decoded_word == corrupted}")
-
-
-        # #Test 5: LP decoder (subset ML relaxation)
-        # print("\n" + "="*60)
-        # print("LP DECODER (subset relaxation):")
-        # print("-" * 45)
-        
-        # start = time.perf_counter()
-        # lp_syndrome_ML_decoded_word, lp_syndrome_ML_cost = lp_decode_subset_relaxation(corrupted, codewords, 0.1, local_constraints=local_constraints)
-        # end = time.perf_counter()
-        # lp_syndrome_ML_execution_time = end - start
-        
-        # print(f"Decoded word: {lp_syndrome_ML_decoded_word}")
-        # print(f"LP cost: {lp_syndrome_ML_cost:.6f}")
-        # print(f"Execution time: {lp_syndrome_ML_execution_time:.6f}s")
-        # print(f"Correct decoding: {lp_syndrome_ML_decoded_word == original}")
-        # print(f"Is the same as corrupted message: {lp_syndrome_ML_decoded_word == corrupted}")
-
-        # Test 6: LP decoder (syndrome ML relaxation) 
-        print("\n" + "="*60)
-        print("LP DECODER (syndrome ML relaxation):")
-        print("-" * 45)
-        
-        start = time.perf_counter()
-        lp_syndrome_ML_decoded_word, lp_syndrome_ML_cost = lp_decode_syndrome_ml_relaxation(
-            corrupted, 
-            codewords, 
-            channel_error_prob=0.1, 
-            parity_check_matrix=parity_check_matrix,  # Required parameter
-            max_error_weight=3  # Limit search for efficiency
-        )
-        end = time.perf_counter()
-        lp_syndrome_ML_execution_time = end - start
-        
-        print(f"Decoded word: {lp_syndrome_ML_decoded_word}")
-        print(f"LP cost: {lp_syndrome_ML_cost:.6f}")
-        print(f"Execution time: {lp_syndrome_ML_execution_time:.6f}s")
-        print(f"Correct decoding: {lp_syndrome_ML_decoded_word == original}")
-        print(f"Is the same as corrupted message: {lp_syndrome_ML_decoded_word == corrupted}")
-
-        # Test 7: LP decoder (syndrome polytope relaxation)
-        print("\n" + "="*60)
-        print("LP DECODER (syndrome polytope relaxation):")
-        print("-" * 45)
-        
-        start = time.perf_counter()
-        lp_syndrome_polytope_decoded_word, lp_syndrome_polytope_cost = lp_decode_syndrome_polytope_relaxation(
-            corrupted, 
-            codewords, 
+        decoded, cost, exec_time = run_decoder_test(
+            decoder_func=lp_decode,
+            method_name="LP DECODER (fundamental relaxation)",
+            corrupted_word=corrupted,
+            original_word=original,
+            codewords=codewords,
             channel_error_prob=0.1,
-            parity_check_matrix=parity_check_matrix  # Required parameter
+            relaxation='fundamental',
+            local_constraints=local_constraints
         )
-        end = time.perf_counter()
-        lp_syndrome_polytope_execution_time = end - start
+        results.append(("LP Fundamental", decoded, cost, exec_time, decoded == original))
         
-        print(f"Decoded word: {lp_syndrome_polytope_decoded_word}")
-        print(f"LP cost: {lp_syndrome_polytope_cost:.6f}")
-        print(f"Execution time: {lp_syndrome_polytope_execution_time:.6f}s")
-        print(f"Correct decoding: {lp_syndrome_polytope_decoded_word == original}")
-        print(f"Is the same as corrupted message: {lp_syndrome_polytope_decoded_word == corrupted}")
+        # Test 3: LP decoder (box relaxation)
+        decoded, cost, exec_time = run_decoder_test(
+            decoder_func=lp_decode_box_relaxation,
+            method_name="LP DECODER (box relaxation)",
+            corrupted_word=corrupted,
+            original_word=original,
+            codewords=codewords,
+            channel_error_prob=0.1
+        )
+        results.append(("LP Box", decoded, cost, exec_time, decoded == original))
 
-        # # Comparison
-        # print("\n" + "="*60)
-        # print("COMPARISON:")
-        # print("-" * 45)
-        
-        # if naive_decoded_word and lp_relaxed_decoded_word:
-        #     print(f"Naive vs Relaxed LP agree: {naive_decoded_word == lp_relaxed_decoded_word}")
-        #     speedup = naive_execution_time / lp_relaxed_execution_time
-        #     print(f"Relaxed LP speedup over naive: {speedup:.2f}x")
-        
-        # # Performance summary
-        # print(f"\nPerformance Summary:")
-        # all_correct = []
-        # if naive_decoded_word == original:
-        #     all_correct.append("Naive")
-        # if lp_relaxed_decoded_word == original:
-        #     all_correct.append("Relaxed LP")
-        
-        # if all_correct:
-        #     print(f"  Correct decoders: {', '.join(all_correct)}")
-        # else:
-        #     print(f"  No decoder found the correct codeword!")
-        
-        # print(f"  Fastest method: LP Relaxation" if lp_relaxed_execution_time < naive_execution_time else "Naive")
+        # Test 4: LP decoder (simple parity relaxation)
+        decoded, cost, exec_time = run_decoder_test(
+            decoder_func=lp_decode_simple_parity_relaxation,
+            method_name="LP DECODER (simple parity relaxation)",
+            corrupted_word=corrupted,
+            original_word=original,
+            codewords=codewords,
+            channel_error_prob=0.1,
+            local_constraints=local_constraints
+        )
+        results.append(("LP Simple Parity", decoded, cost, exec_time, decoded == original))
+
+        # Test 5: LP decoder (syndrome ML relaxation)
+        decoded, cost, exec_time = run_decoder_test(
+            decoder_func=lp_decode_syndrome_ml_relaxation,
+            method_name="LP DECODER (syndrome ML relaxation)",
+            corrupted_word=corrupted,
+            original_word=original,
+            codewords=codewords,
+            channel_error_prob=0.1,
+            parity_check_matrix=parity_check_matrix,
+            max_error_weight=3
+        )
+        results.append(("LP Syndrome ML", decoded, cost, exec_time, decoded == original))
+
+        # Test 6: LP decoder (syndrome polytope relaxation)
+        decoded, cost, exec_time = run_decoder_test(
+            decoder_func=lp_decode_syndrome_polytope_relaxation,
+            method_name="LP DECODER (syndrome polytope relaxation)",
+            corrupted_word=corrupted,
+            original_word=original,
+            codewords=codewords,
+            channel_error_prob=0.1,
+            parity_check_matrix=parity_check_matrix
+        )
+        results.append(("LP Syndrome Polytope", decoded, cost, exec_time, decoded == original))
+
+        # Print comparison summary
+        print_comparison_summary(results)
         
     except FileNotFoundError:
         print(f"Error: File {filename} not found!")
@@ -226,7 +149,5 @@ def test_ldpc_code():
         import traceback
         traceback.print_exc()
 
-
 if __name__ == "__main__":  
     main()
-    
